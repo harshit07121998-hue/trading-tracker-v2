@@ -435,6 +435,9 @@ class _AddPurchaseScreenState extends State<AddPurchaseScreen> {
   DateTime purchaseDate = DateTime.now();
 
   List<Map<String, dynamic>> accounts = [];
+  List<Map<String, dynamic>> nifty500 = [];
+  bool loadingNifty500 = true;
+  bool nifty500Selected = false;
 
   final symbol = TextEditingController();
   final quantity = TextEditingController();
@@ -448,6 +451,22 @@ class _AddPurchaseScreenState extends State<AddPurchaseScreen> {
   void initState() {
     super.initState();
     loadAccounts();
+    loadNifty500();
+  }
+
+  Future<void> loadNifty500() async {
+    try {
+      final rows = await lotManager.searchNifty500('');
+      if (!mounted) return;
+
+      setState(() {
+        nifty500 = rows;
+        loadingNifty500 = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => loadingNifty500 = false);
+    }
   }
 
   Future<void> loadAccounts() async {
@@ -508,6 +527,7 @@ class _AddPurchaseScreenState extends State<AddPurchaseScreen> {
         mtfDailyCharge: assetType == 'MTF'
             ? double.tryParse(mtfDaily.text) ?? 0
             : 0,
+        nifty500AtPurchase: nifty500Selected,
       );
 
       if (mounted) Navigator.pop(context);
@@ -523,6 +543,82 @@ class _AddPurchaseScreenState extends State<AddPurchaseScreen> {
   void _error(String text) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(text)),
+    );
+  }
+
+  Widget _nifty500Selector() {
+    if (assetType != 'Stock' && assetType != 'MTF') {
+      return TextField(
+        controller: symbol,
+        decoration: const InputDecoration(
+          labelText: 'Symbol / Security',
+        ),
+        onChanged: (_) {
+          nifty500Selected = false;
+        },
+      );
+    }
+
+    if (loadingNifty500) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 12),
+        child: LinearProgressIndicator(),
+      );
+    }
+
+    return Autocomplete<Map<String, dynamic>>(
+      displayStringForOption: (stock) =>
+          '${stock['symbol']} • ${stock['company_name'] ?? ''}',
+      optionsBuilder: (value) {
+        final query = value.text.trim().toLowerCase();
+
+        if (query.isEmpty) {
+          return nifty500.take(30);
+        }
+
+        return nifty500.where((stock) {
+          final stockSymbol =
+              '${stock['symbol'] ?? ''}'.toLowerCase();
+          final company =
+              '${stock['company_name'] ?? ''}'.toLowerCase();
+
+          return stockSymbol.contains(query) ||
+              company.contains(query);
+        }).take(30);
+      },
+      onSelected: (stock) {
+        symbol.text =
+            '${stock['symbol'] ?? ''}'.trim().toUpperCase();
+
+        nifty500Selected = true;
+        setState(() {});
+      },
+      fieldViewBuilder:
+          (context, controller, focusNode, onFieldSubmitted) {
+        if (symbol.text.isNotEmpty &&
+            controller.text != symbol.text) {
+          controller.text = symbol.text;
+          controller.selection =
+              TextSelection.fromPosition(
+            TextPosition(offset: controller.text.length),
+          );
+        }
+
+        return TextField(
+          controller: controller,
+          focusNode: focusNode,
+          decoration: const InputDecoration(
+            labelText: 'Nifty 500 Stock',
+            hintText: 'Search symbol or company',
+            prefixIcon: Icon(Icons.search),
+          ),
+          onChanged: (value) {
+            symbol.text = value.toUpperCase();
+            nifty500Selected = false;
+          },
+          onSubmitted: (_) => onFieldSubmitted(),
+        );
+      },
     );
   }
 
@@ -601,11 +697,7 @@ class _AddPurchaseScreenState extends State<AddPurchaseScreen> {
             icon: const Icon(Icons.add),
             label: const Text('Add another account'),
           ),
-          TextField(
-            controller: symbol,
-            decoration:
-                const InputDecoration(labelText: 'Symbol / Security'),
-          ),
+          _nifty500Selector(),
           const SizedBox(height: 12),
           _numberField(quantity, 'Quantity'),
           _numberField(price, 'Buy Price'),

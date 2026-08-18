@@ -431,4 +431,8 @@ class LotManager {
         category: category,
         xirr: value,
       );
+Future<List<Map<String, dynamic>>> searchNifty500(
+  String search,
+) =>
+    _db.searchNifty500(search);
 }

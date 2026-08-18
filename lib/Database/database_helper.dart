@@ -375,6 +375,31 @@ class DatabaseHelper {
       CREATE INDEX IF NOT EXISTS idx_cash_flows_category
       ON cash_flows(category)
     ''');
+
+    // ==========================================================
+    // WALLET TRANSACTIONS
+    // ==========================================================
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS wallet_transactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        account_id INTEGER NOT NULL,
+        type TEXT NOT NULL,
+        amount REAL NOT NULL,
+        reference_type TEXT,
+        reference_id INTEGER,
+        transfer_account_id INTEGER,
+        transaction_date TEXT NOT NULL,
+        description TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (account_id) REFERENCES accounts(id)
+      )
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_wallet_account
+      ON wallet_transactions(account_id)
+    ''');
   }
 
   // ============================================================
@@ -1055,32 +1080,6 @@ class DatabaseHelper {
   }
 
 
-    // ============================================================
-    // WALLET LEDGER
-    // ============================================================
-
-    await db.execute('''
-      CREATE TABLE IF NOT EXISTS wallet_transactions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        account_id INTEGER NOT NULL,
-        type TEXT NOT NULL,
-        amount REAL NOT NULL,
-        reference_type TEXT,
-        reference_id INTEGER,
-        transfer_account_id INTEGER,
-        transaction_date TEXT NOT NULL,
-        description TEXT,
-        created_at TEXT NOT NULL,
-        FOREIGN KEY (account_id) REFERENCES accounts(id)
-      )
-    ''');
-
-    await db.execute('''
-      CREATE INDEX IF NOT EXISTS idx_wallet_account
-      ON wallet_transactions(account_id)
-    ''');
-
-
   // ============================================================
   // WALLET
   // ============================================================
@@ -1241,6 +1240,39 @@ class DatabaseHelper {
 
     final destination = File(await getDatabasePath());
     await source.copy(destination.path);
+  }
+
+  // ============================================================
+  // BYTE BACKUP / RESTORE
+  // ============================================================
+
+  Future<List<int>> readDatabaseBytes() async {
+    final path = await getDatabasePath();
+
+    if (_database != null) {
+      await _database!.close();
+      _database = null;
+    }
+
+    final file = File(path);
+
+    if (!await file.exists()) {
+      throw Exception('Database file not found.');
+    }
+
+    return file.readAsBytes();
+  }
+
+  Future<void> restoreDatabaseBytes(List<int> bytes) async {
+    if (_database != null) {
+      await _database!.close();
+      _database = null;
+    }
+
+    final path = await getDatabasePath();
+    final file = File(path);
+
+    await file.writeAsBytes(bytes, flush: true);
   }
 
   // ============================================================

@@ -164,30 +164,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text(
-          'Trading Tracker',
+          'Dashboard',
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
         actions: [
           IconButton(
-            tooltip: 'Wallet',
-            onPressed: () => open(WalletScreen(accounts: accounts)),
-            icon: const Icon(Icons.account_balance_wallet_outlined),
-          ),
-          PopupMenuButton<String>(
-            onSelected: (value) {
-              if (value == 'backup') backup();
-              if (value == 'restore') restore();
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(
-                value: 'backup',
-                child: Text('Backup Data'),
-              ),
-              PopupMenuItem(
-                value: 'restore',
-                child: Text('Restore Data'),
-              ),
-            ],
+            tooltip: 'More',
+            onPressed: () => open(const MoreScreen()),
+            icon: const Icon(Icons.more_horiz),
           ),
         ],
       ),
@@ -196,53 +180,266 @@ class _DashboardScreenState extends State<DashboardScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            _summaryCard(),
-            const SizedBox(height: 12),
-            _xirrCard(),
-            const SizedBox(height: 18),
-
-            FilledButton.icon(
-              onPressed: () => open(const OpenPositionsScreen()),
-              icon: const Icon(Icons.account_balance),
-              label: const Text('Open Positions'),
-              style: FilledButton.styleFrom(
-                minimumSize: const Size.fromHeight(52),
+            _heroPortfolioCard(),
+            const SizedBox(height: 14),
+            _quickMetrics(),
+            const SizedBox(height: 14),
+            _assetSummary(),
+            const SizedBox(height: 14),
+            const Text(
+              'Quick Actions',
+              style: TextStyle(
+                fontSize: 19,
+                fontWeight: FontWeight.bold,
               ),
             ),
-
             const SizedBox(height: 10),
+            _quickActions(),
+          ],
+        ),
+      ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: 0,
+        onDestinationSelected: (index) {
+          if (index == 1) open(const OpenPositionsScreen());
+          if (index == 2) open(const ClosedScreen());
+          if (index == 3) open(const XirrScreen());
+          if (index == 4) open(const MoreScreen());
+        },
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.home_outlined),
+            selectedIcon: Icon(Icons.home),
+            label: 'Dashboard',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.business_center_outlined),
+            label: 'Open Positions',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.history),
+            label: 'Closed',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.show_chart),
+            label: 'XIRR',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.more_horiz),
+            label: 'More',
+          ),
+        ],
+      ),
+    );
+  }
 
-            FilledButton.icon(
-              onPressed: () => open(const AddPurchaseScreen()),
-              icon: const Icon(Icons.add),
-              label: const Text('Add Position'),
-              style: FilledButton.styleFrom(
-                minimumSize: const Size.fromHeight(52),
+  Widget _heroPortfolioCard() {
+    final pnl = portfolioValue - totalInvested;
+    final pct = totalInvested == 0 ? 0 : pnl / totalInvested * 100;
+
+    return Card(
+      elevation: 0,
+      child: Padding(
+        padding: const EdgeInsets.all(22),
+        child: Column(
+          children: [
+            const Text(
+              'Total Portfolio Value',
+              style: TextStyle(fontSize: 15),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '₹${portfolioValue.toStringAsFixed(2)}',
+              style: const TextStyle(
+                fontSize: 30,
+                fontWeight: FontWeight.bold,
               ),
             ),
-
-            const SizedBox(height: 10),
-
-            OutlinedButton.icon(
-              onPressed: () => open(const OptionsScreen()),
-              icon: const Icon(Icons.show_chart),
-              label: const Text('Options'),
-              style: OutlinedButton.styleFrom(
-                minimumSize: const Size.fromHeight(52),
-              ),
-            ),
-
-            const SizedBox(height: 10),
-
-            OutlinedButton.icon(
-              onPressed: () => open(const ClosedScreen()),
-              icon: const Icon(Icons.history),
-              label: const Text('Closed Positions / Options'),
-              style: OutlinedButton.styleFrom(
-                minimumSize: const Size.fromHeight(52),
+            const SizedBox(height: 4),
+            Text(
+              '${pnl >= 0 ? '+' : ''}₹${pnl.toStringAsFixed(2)} '
+              '(${pct.toStringAsFixed(2)}%)',
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.bold,
+                color: pnl >= 0 ? Colors.green[700] : Colors.red[700],
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _quickMetrics() {
+    return Row(
+      children: [
+        Expanded(
+          child: _metricCard(
+            'Invested',
+            totalInvested,
+            Icons.account_balance_wallet_outlined,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _metricCard(
+            'Unrealized P&L',
+            portfolioValue - totalInvested,
+            Icons.trending_up,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: FutureBuilder<double?>(
+            future: lotManager.getLatestXirr('Overall'),
+            builder: (_, snapshot) => _metricCard(
+              'XIRR',
+              snapshot.data ?? 0,
+              Icons.percent,
+              suffix: snapshot.hasData ? '%' : '--',
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _metricCard(
+    String title,
+    double value,
+    IconData icon, {
+    String suffix = '',
+  }) {
+    return Card(
+      elevation: 0,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          children: [
+            Icon(icon, size: 22),
+            const SizedBox(height: 6),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 12),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              suffix == '%'
+                  ? '${value.toStringAsFixed(2)}%'
+                  : '₹${value.toStringAsFixed(0)}',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _assetSummary() {
+    final stock = stockValue;
+    final mtf = mtfFunds + mtfGain;
+    final crypto = cryptoValue;
+
+    return Card(
+      elevation: 0,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Asset Summary',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 12),
+            _assetRow('Stock', stock),
+            _assetRow('MTF', mtf),
+            _assetRow('Crypto', crypto),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _assetRow(String name, double value) {
+    final percent =
+        portfolioValue == 0 ? 0 : value / portfolioValue * 100;
+
+    return ListTile(
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      title: Text(name),
+      subtitle: Text('${percent.toStringAsFixed(1)}%'),
+      trailing: Text(
+        '₹${value.toStringAsFixed(2)}',
+        style: const TextStyle(fontWeight: FontWeight.bold),
+      ),
+    );
+  }
+
+  Widget _quickActions() {
+    return GridView.count(
+      crossAxisCount: 4,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      crossAxisSpacing: 8,
+      mainAxisSpacing: 8,
+      childAspectRatio: 1.05,
+      children: [
+        _action(
+          Icons.business_center,
+          'Open Positions',
+          () => open(const OpenPositionsScreen()),
+        ),
+        _action(
+          Icons.add,
+          'Add Stock / MTF',
+          () => open(const AddPurchaseScreen()),
+        ),
+        _action(
+          Icons.show_chart,
+          'Add Option',
+          () => open(const OptionsScreen()),
+        ),
+        _action(
+          Icons.currency_bitcoin,
+          'Add Crypto',
+          () => open(const AddPurchaseScreen()),
+        ),
+      ],
+    );
+  }
+
+  Widget _action(
+    IconData icon,
+    String label,
+    VoidCallback onTap,
+  ) {
+    return Card(
+      elevation: 0,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon),
+              const SizedBox(height: 6),
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 11),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -689,6 +886,220 @@ class PortfolioBreakdownScreen extends StatelessWidget {
               ? (value >= 0 ? Colors.green[700] : Colors.red[700])
               : null,
         ),
+      ),
+    );
+  }
+}
+
+
+class PositionDetailsScreen extends StatelessWidget {
+  final Lot lot;
+
+  const PositionDetailsScreen({
+    super.key,
+    required this.lot,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final pnl = lot.marketValue - lot.investedValue;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(lot.symbol),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Card(
+            elevation: 0,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  Text(
+                    lot.assetType,
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 12),
+                  _detail('Total Quantity', lot.remainingQuantity),
+                  _detail('Avg Buy Price', lot.buyPrice),
+                  _detail('Invested', lot.investedValue),
+                  _detail('Unrealized P&L', pnl, signed: true),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'Lot',
+            style: TextStyle(
+              fontSize: 19,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          Card(
+            elevation: 0,
+            child: ListTile(
+              title: Text('${lot.remainingQuantity} Shares / Units'),
+              subtitle: Text(
+                'Buy ₹${lot.buyPrice.toStringAsFixed(2)} • '
+                '${lot.purchaseDate.day}/${lot.purchaseDate.month}/${lot.purchaseDate.year}',
+              ),
+              trailing: PopupMenuButton<String>(
+                onSelected: (value) async {
+                  Widget? screen;
+                  if (value == 'edit') {
+                    screen = EditLotScreen(lot: lot);
+                  } else if (value == 'price') {
+                    screen = CurrentPriceScreen(lot: lot);
+                  } else if (value == 'square') {
+                    screen = SquareOffScreen(lot: lot);
+                  }
+
+                  if (screen != null) {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => screen!),
+                    );
+                  }
+                },
+                itemBuilder: (_) => const [
+                  PopupMenuItem(
+                    value: 'edit',
+                    child: Text('Edit Lot'),
+                  ),
+                  PopupMenuItem(
+                    value: 'price',
+                    child: Text('Update Price'),
+                  ),
+                  PopupMenuItem(
+                    value: 'square',
+                    child: Text('Square Off'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _detail(String label, double value, {bool signed = false}) {
+    return ListTile(
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      title: Text(label),
+      trailing: Text(
+        '${signed && value >= 0 ? '+' : ''}₹${value.toStringAsFixed(2)}',
+        style: TextStyle(
+          fontWeight: FontWeight.bold,
+          color: signed
+              ? (value >= 0 ? Colors.green[700] : Colors.red[700])
+              : null,
+        ),
+      ),
+    );
+  }
+}
+
+class XirrScreen extends StatelessWidget {
+  const XirrScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('XIRR / Performance')),
+      body: FutureBuilder<Map<String, double?>>(
+        future: _load(),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          return ListView(
+            padding: const EdgeInsets.all(16),
+            children: snapshot.data!.entries.map((entry) {
+              final value = entry.value;
+
+              return Card(
+                elevation: 0,
+                child: ListTile(
+                  title: Text(entry.key),
+                  trailing: Text(
+                    value == null
+                        ? '--'
+                        : '${(value * 100).toStringAsFixed(2)}%',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<Map<String, double?>> _load() async {
+    final result = <String, double?>{};
+
+    for (final type in [
+      'Stock',
+      'MTF',
+      'Crypto',
+      'Option',
+    ]) {
+      result[type] = await lotManager.getLatestXirr(type);
+    }
+
+    return result;
+  }
+}
+
+class MoreScreen extends StatelessWidget {
+  const MoreScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('More')),
+      body: ListView(
+        children: [
+          ListTile(
+            leading: const Icon(Icons.account_balance_wallet_outlined),
+            title: const Text('Wallet'),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const WalletScreen(accounts: []),
+              ),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.account_balance),
+            title: const Text('Accounts'),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const AccountScreen(),
+              ),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.backup),
+            title: const Text('Backup Database'),
+            onTap: () {},
+          ),
+          ListTile(
+            leading: const Icon(Icons.restore),
+            title: const Text('Restore Database'),
+            onTap: () {},
+          ),
+        ],
       ),
     );
   }

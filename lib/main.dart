@@ -257,7 +257,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
           children: [
             _metric('Total Invested Value', totalInvested),
             _metric('Wallet Balance', walletBalance),
-            _metric('Portfolio Value', portfolioValue),
+            InkWell(
+              onTap: () => open(const PortfolioBreakdownScreen()),
+              child: _metric('Portfolio Value', portfolioValue),
+            ),
             _metric(
               'Unrealized Gain/Loss',
               portfolioValue - totalInvested,
@@ -591,6 +594,100 @@ class _OpenPositionsScreenState extends State<OpenPositionsScreen> {
             else
               ..._groups(),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+
+class PortfolioBreakdownScreen extends StatelessWidget {
+  const PortfolioBreakdownScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<Lot>>(
+      future: lotManager.getAllOpenLots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return Scaffold(
+            appBar: AppBar(title: const Text('Portfolio Breakdown')),
+            body: const Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        final lots = snapshot.data!;
+
+        double value(String type) => lots
+            .where((lot) => lot.assetType == type)
+            .fold(0, (sum, lot) => sum + lot.marketValue);
+
+        double invested(String type) => lots
+            .where((lot) => lot.assetType == type)
+            .fold(0, (sum, lot) => sum + lot.investedValue);
+
+        double gain(String type) => value(type) - invested(type);
+
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('Portfolio Breakdown'),
+          ),
+          body: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              _breakdownCard('Stock', value('Stock'), invested('Stock'), gain('Stock')),
+              _breakdownCard('MTF', value('MTF'), invested('MTF'), gain('MTF')),
+              _breakdownCard('Crypto', value('Crypto'), invested('Crypto'), gain('Crypto')),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _breakdownCard(
+    String title,
+    double portfolio,
+    double invested,
+    double gain,
+  ) {
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 10),
+            _row('Portfolio Value', portfolio),
+            _row('Invested Value', invested),
+            _row('Unrealized Gain/Loss', gain, signed: true),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _row(String label, double value, {bool signed = false}) {
+    return ListTile(
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      title: Text(label),
+      trailing: Text(
+        '${signed && value >= 0 ? '+' : ''}₹${value.toStringAsFixed(2)}',
+        style: TextStyle(
+          fontWeight: FontWeight.bold,
+          color: signed
+              ? (value >= 0 ? Colors.green[700] : Colors.red[700])
+              : null,
         ),
       ),
     );

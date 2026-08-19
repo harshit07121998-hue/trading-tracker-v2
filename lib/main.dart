@@ -1,5 +1,7 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
+import 'package:csv/csv.dart';
 
 import 'lot.dart';
 import 'lot_manager.dart';
@@ -198,37 +200,47 @@ class _DashboardScreenState extends State<DashboardScreen> {
             const SizedBox(height: 12),
             _xirrCard(),
             const SizedBox(height: 18),
-            Row(
-              children: [
-                const Expanded(
-                  child: Text(
-                    'Open Positions',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                FilledButton.icon(
-                  onPressed: () => open(const AddPurchaseScreen()),
-                  icon: const Icon(Icons.add),
-                  label: const Text('Add'),
-                ),
-              ],
+
+            FilledButton.icon(
+              onPressed: () => open(const OpenPositionsScreen()),
+              icon: const Icon(Icons.account_balance),
+              label: const Text('Open Positions'),
+              style: FilledButton.styleFrom(
+                minimumSize: const Size.fromHeight(52),
+              ),
             ),
-            const SizedBox(height: 8),
-            ..._positionGroups(),
-            const SizedBox(height: 12),
-            FilledButton.tonalIcon(
+
+            const SizedBox(height: 10),
+
+            FilledButton.icon(
+              onPressed: () => open(const AddPurchaseScreen()),
+              icon: const Icon(Icons.add),
+              label: const Text('Add Position'),
+              style: FilledButton.styleFrom(
+                minimumSize: const Size.fromHeight(52),
+              ),
+            ),
+
+            const SizedBox(height: 10),
+
+            OutlinedButton.icon(
               onPressed: () => open(const OptionsScreen()),
               icon: const Icon(Icons.show_chart),
-              label: const Text('Add Options Trade'),
+              label: const Text('Options'),
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size.fromHeight(52),
+              ),
             ),
-            const SizedBox(height: 8),
+
+            const SizedBox(height: 10),
+
             OutlinedButton.icon(
               onPressed: () => open(const ClosedScreen()),
               icon: const Icon(Icons.history),
               label: const Text('Closed Positions / Options'),
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size.fromHeight(52),
+              ),
             ),
           ],
         ),
@@ -422,6 +434,169 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 }
 
+
+class OpenPositionsScreen extends StatefulWidget {
+  const OpenPositionsScreen({super.key});
+
+  @override
+  State<OpenPositionsScreen> createState() => _OpenPositionsScreenState();
+}
+
+class _OpenPositionsScreenState extends State<OpenPositionsScreen> {
+  List<Lot> lots = [];
+
+  @override
+  void initState() {
+    super.initState();
+    refresh();
+  }
+
+  Future<void> refresh() async {
+    final rows = await lotManager.getAllOpenLots();
+    if (!mounted) return;
+    setState(() => lots = rows);
+  }
+
+  List<Widget> _groups() {
+    final groups = <String, List<Lot>>{};
+
+    for (final lot in lots) {
+      groups.putIfAbsent(
+        '${lot.assetType}|${lot.symbol}',
+        () => [],
+      ).add(lot);
+    }
+
+    return groups.values.map((group) {
+      final first = group.first;
+
+      final quantity = group.fold<double>(
+        0,
+        (sum, lot) => sum + lot.remainingQuantity,
+      );
+
+      return Card(
+        elevation: 0,
+        child: ExpansionTile(
+          title: Text(
+            first.symbol,
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          subtitle: Text(
+            '${first.assetType} • $quantity units • ${group.length} lot(s)',
+          ),
+          children: group.map((lot) {
+            return ListTile(
+              title: Text(
+                '${lot.remainingQuantity} @ ₹${lot.buyPrice.toStringAsFixed(2)}',
+              ),
+              subtitle: Text(
+                '${lot.account} • '
+                '${lot.purchaseDate.day}/${lot.purchaseDate.month}/${lot.purchaseDate.year}',
+              ),
+              trailing: PopupMenuButton<String>(
+                onSelected: (value) async {
+                  if (value == 'edit') {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => EditLotScreen(lot: lot),
+                      ),
+                    );
+                  } else if (value == 'price') {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => CurrentPriceScreen(lot: lot),
+                      ),
+                    );
+                  } else if (value == 'dividend') {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => DividendScreen(lot: lot),
+                      ),
+                    );
+                  } else if (value == 'square') {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => SquareOffScreen(lot: lot),
+                      ),
+                    );
+                  }
+
+                  await refresh();
+                },
+                itemBuilder: (_) => const [
+                  PopupMenuItem(
+                    value: 'edit',
+                    child: Text('Edit Position'),
+                  ),
+                  PopupMenuItem(
+                    value: 'price',
+                    child: Text('Update Current Price'),
+                  ),
+                  PopupMenuItem(
+                    value: 'dividend',
+                    child: Text('Add Dividend'),
+                  ),
+                  PopupMenuItem(
+                    value: 'square',
+                    child: Text('Square Off Full Lot'),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+        ),
+      );
+    }).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Open Positions'),
+      ),
+      body: RefreshIndicator(
+        onRefresh: refresh,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            FilledButton.icon(
+              onPressed: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const AddPurchaseScreen(),
+                  ),
+                );
+                await refresh();
+              },
+              icon: const Icon(Icons.add),
+              label: const Text('Add Position'),
+            ),
+            const SizedBox(height: 12),
+            if (lots.isEmpty)
+              const Card(
+                child: Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Center(
+                    child: Text('No open positions'),
+                  ),
+                ),
+              )
+            else
+              ..._groups(),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class AddPurchaseScreen extends StatefulWidget {
   const AddPurchaseScreen({super.key});
 
@@ -438,6 +613,7 @@ class _AddPurchaseScreenState extends State<AddPurchaseScreen> {
   List<Map<String, dynamic>> nifty500 = [];
   bool loadingNifty500 = true;
   bool nifty500Selected = false;
+  bool manualStock = false;
 
   final symbol = TextEditingController();
   final quantity = TextEditingController();
@@ -456,16 +632,52 @@ class _AddPurchaseScreenState extends State<AddPurchaseScreen> {
 
   Future<void> loadNifty500() async {
     try {
-      final rows = await lotManager.searchNifty500('');
+      final csvText = await rootBundle.loadString(
+        'assets/ind_nifty500list.csv',
+      );
+
+      final rows = csv.decode(csvText);
+
+      final loaded = <Map<String, dynamic>>[];
+
+      for (final row in rows.skip(1)) {
+        if (row.length < 4) continue;
+
+        final companyName = row[0].toString().trim();
+        final symbol = row[2].toString().trim();
+        final series = row[3].toString().trim();
+
+        if (symbol.isEmpty ||
+            companyName.isEmpty ||
+            series != 'EQ') {
+          continue;
+        }
+
+        loaded.add({
+          'symbol': symbol,
+          'company_name': companyName,
+        });
+      }
+
       if (!mounted) return;
 
       setState(() {
-        nifty500 = rows;
+        nifty500 = loaded;
         loadingNifty500 = false;
       });
-    } catch (_) {
+
+      debugPrint(
+        'Loaded NIFTY 500 companies: ${loaded.length}',
+      );
+    } catch (e) {
+      debugPrint('NIFTY 500 CSV load failed: $e');
+
       if (!mounted) return;
-      setState(() => loadingNifty500 = false);
+
+      setState(() {
+        nifty500 = [];
+        loadingNifty500 = false;
+      });
     }
   }
 
@@ -553,9 +765,6 @@ class _AddPurchaseScreenState extends State<AddPurchaseScreen> {
         decoration: const InputDecoration(
           labelText: 'Symbol / Security',
         ),
-        onChanged: (_) {
-          nifty500Selected = false;
-        },
       );
     }
 
@@ -566,59 +775,189 @@ class _AddPurchaseScreenState extends State<AddPurchaseScreen> {
       );
     }
 
-    return Autocomplete<Map<String, dynamic>>(
-      displayStringForOption: (stock) =>
-          '${stock['symbol']} • ${stock['company_name'] ?? ''}',
-      optionsBuilder: (value) {
-        final query = value.text.trim().toLowerCase();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        OutlinedButton.icon(
+          onPressed: () async {
+            final result =
+                await showDialog<Map<String, dynamic>>(
+              context: context,
+              builder: (dialogContext) {
+                final searchController =
+                    TextEditingController();
 
-        if (query.isEmpty) {
-          return nifty500.take(30);
-        }
+                return StatefulBuilder(
+                  builder: (context, setDialogState) {
+                    final query =
+                        searchController.text.trim().toLowerCase();
 
-        return nifty500.where((stock) {
-          final stockSymbol =
-              '${stock['symbol'] ?? ''}'.toLowerCase();
-          final company =
-              '${stock['company_name'] ?? ''}'.toLowerCase();
+                    final filtered = nifty500.where((stock) {
+                      if (query.isEmpty) return true;
 
-          return stockSymbol.contains(query) ||
-              company.contains(query);
-        }).take(30);
-      },
-      onSelected: (stock) {
-        symbol.text =
-            '${stock['symbol'] ?? ''}'.trim().toUpperCase();
+                      final stockSymbol =
+                          '${stock['symbol'] ?? ''}'.toLowerCase();
 
-        nifty500Selected = true;
-        setState(() {});
-      },
-      fieldViewBuilder:
-          (context, controller, focusNode, onFieldSubmitted) {
-        if (symbol.text.isNotEmpty &&
-            controller.text != symbol.text) {
-          controller.text = symbol.text;
-          controller.selection =
-              TextSelection.fromPosition(
-            TextPosition(offset: controller.text.length),
-          );
-        }
+                      final company =
+                          '${stock['company_name'] ?? ''}'.toLowerCase();
 
-        return TextField(
-          controller: controller,
-          focusNode: focusNode,
-          decoration: const InputDecoration(
-            labelText: 'Nifty 500 Stock',
-            hintText: 'Search symbol or company',
-            prefixIcon: Icon(Icons.search),
-          ),
-          onChanged: (value) {
-            symbol.text = value.toUpperCase();
-            nifty500Selected = false;
+                      return stockSymbol.contains(query) ||
+                          company.contains(query);
+                    }).take(50).toList();
+
+                    return AlertDialog(
+                      title: const Text('Select Stock'),
+                      content: SizedBox(
+                        width: 550,
+                        height: 500,
+                        child: Column(
+                          children: [
+                            TextField(
+                              controller: searchController,
+                              autofocus: true,
+                              decoration: const InputDecoration(
+                                prefixIcon: Icon(Icons.search),
+                                hintText:
+                                    'Search company or symbol',
+                              ),
+                              onChanged: (_) {
+                                setDialogState(() {});
+                              },
+                            ),
+                            const SizedBox(height: 10),
+                            Expanded(
+                              child: ListView(
+                                children: [
+                                  ...filtered.map(
+                                    (stock) {
+                                      return ListTile(
+                                        leading: const Icon(
+                                          Icons.business,
+                                        ),
+                                        title: Text(
+                                          '${stock['symbol']}',
+                                          style: const TextStyle(
+                                            fontWeight:
+                                                FontWeight.bold,
+                                          ),
+                                        ),
+                                        subtitle: Text(
+                                          '${stock['company_name'] ?? ''}',
+                                        ),
+                                        onTap: () {
+                                          Navigator.of(
+                                            dialogContext,
+                                          ).pop({
+                                            'type': 'nifty500',
+                                            'symbol':
+                                                '${stock['symbol']}',
+                                            'company':
+                                                '${stock['company_name'] ?? ''}',
+                                          });
+                                        },
+                                      );
+                                    },
+                                  ),
+
+                                  const Divider(),
+
+                                  ListTile(
+                                    leading: const Icon(
+                                      Icons.edit,
+                                    ),
+                                    title: const Text(
+                                      'Other / Not in NIFTY 500',
+                                      style: TextStyle(
+                                        fontWeight:
+                                            FontWeight.bold,
+                                      ),
+                                    ),
+                                    subtitle: const Text(
+                                      'Enter another stock manually',
+                                    ),
+                                    onTap: () {
+                                      Navigator.of(
+                                        dialogContext,
+                                      ).pop({
+                                        'type': 'other',
+                                      });
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () {
+                            Navigator.of(dialogContext).pop();
+                          },
+                          child: const Text('Cancel'),
+                        ),
+                      ],
+                    );
+                  },
+                );
+              },
+            );
+
+            if (!mounted || result == null) return;
+
+            if (result['type'] == 'other') {
+              setState(() {
+                nifty500Selected = false;
+                symbol.clear();
+              });
+              return;
+            }
+
+            if (result['type'] == 'nifty500') {
+              setState(() {
+                nifty500Selected = true;
+                symbol.text =
+                    '${result['symbol'] ?? ''}'
+                        .trim()
+                        .toUpperCase();
+              });
+            }
           },
-          onSubmitted: (_) => onFieldSubmitted(),
-        );
-      },
+          icon: const Icon(Icons.search),
+          label: Text(
+            symbol.text.isEmpty
+                ? 'Select NIFTY 500 Stock'
+                : '${symbol.text} • NIFTY 500',
+          ),
+        ),
+
+        const SizedBox(height: 6),
+
+        TextButton.icon(
+          onPressed: () {
+            setState(() {
+              nifty500Selected = false;
+              symbol.clear();
+            });
+          },
+          icon: const Icon(Icons.edit),
+          label: const Text(
+            'Other / Not in NIFTY 500',
+          ),
+        ),
+
+        if (!nifty500Selected)
+          TextField(
+            controller: symbol,
+            decoration: const InputDecoration(
+              labelText: 'Symbol / Security',
+              hintText: 'Enter symbol manually',
+            ),
+            onChanged: (_) {
+              nifty500Selected = false;
+            },
+          ),
+      ],
     );
   }
 

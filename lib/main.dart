@@ -227,6 +227,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
         actions: [
+          const Padding(
+            padding: EdgeInsets.only(right: 6),
+            child: Center(
+              child: Text(
+                'Hi, Pro Trader Harshit',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF475467),
+                ),
+              ),
+            ),
+          ),
           IconButton(
             tooltip: 'More',
             onPressed: () => open(const MoreScreen()),
@@ -239,7 +252,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            _heroPortfolioCard(),
+            InkWell(
+              borderRadius: BorderRadius.circular(18),
+              onTap: () => open(const PortfolioBreakdownScreen()),
+              child: _heroPortfolioCard(),
+            ),
             const SizedBox(height: 14),
             _quickMetrics(),
             const SizedBox(height: 14),
@@ -298,10 +315,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     return Card(
       elevation: 1,
-      color: Colors.white,
+      color: const Color(0xFFEAF2FF),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(18),
-        side: BorderSide(color: Colors.grey.shade200),
+        side: const BorderSide(
+          color: Color(0xFFBFD7FF),
+        ),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(
@@ -424,7 +443,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     return Card(
       elevation: 1,
-      color: Colors.white,
+      color: const Color(0xFFF8FBFF),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
         side: BorderSide(color: Colors.grey.shade200),

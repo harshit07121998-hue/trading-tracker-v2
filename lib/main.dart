@@ -24,10 +24,69 @@ class TradingTrackerApp extends StatelessWidget {
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
-        scaffoldBackgroundColor: const Color(0xFFF5F7FA),
+        scaffoldBackgroundColor: Colors.white,
       ),
       home: const DashboardScreen(),
     );
+  }
+}
+
+
+class _AssetDonutPainter extends CustomPainter {
+  final List<double> values;
+
+  _AssetDonutPainter({required this.values});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final colors = [
+      const Color(0xFF8B5CF6),
+      const Color(0xFF3B82F6),
+      const Color(0xFFF97316),
+      const Color(0xFF14B8A6),
+    ];
+
+    final total = values.fold<double>(0, (a, b) => a + b);
+    if (total <= 0) return;
+
+    final center = size.center(Offset.zero);
+    final radius = size.shortestSide / 2 - 14;
+
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = radius * 0.28
+      ..strokeCap = StrokeCap.butt;
+
+    double startAngle = -3.1415926535 / 2;
+
+    for (var i = 0; i < values.length; i++) {
+      if (values[i] <= 0) continue;
+
+      final sweep =
+          values[i] / total * 2 * 3.1415926535;
+
+      paint.color = colors[i];
+
+      canvas.drawArc(
+        Rect.fromCircle(
+          center: center,
+          radius: radius,
+        ),
+        startAngle,
+        sweep - 0.025,
+        false,
+        paint,
+      );
+
+      startAngle += sweep;
+    }
+  }
+
+  @override
+  bool shouldRepaint(
+    covariant _AssetDonutPainter oldDelegate,
+  ) {
+    return oldDelegate.values != values;
   }
 }
 
@@ -238,32 +297,58 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final pct = totalInvested == 0 ? 0 : pnl / totalInvested * 100;
 
     return Card(
-      elevation: 0,
+      elevation: 1,
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: BorderSide(color: Colors.grey.shade200),
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(22),
+        padding: const EdgeInsets.symmetric(
+          horizontal: 24,
+          vertical: 22,
+        ),
         child: Column(
           children: [
             const Text(
               'Total Portfolio Value',
-              style: TextStyle(fontSize: 15),
+              style: TextStyle(
+                fontSize: 15,
+                color: Color(0xFF5F6B7A),
+              ),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 5),
             Text(
               '₹${portfolioValue.toStringAsFixed(2)}',
               style: const TextStyle(
-                fontSize: 30,
-                fontWeight: FontWeight.bold,
+                fontSize: 32,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF101828),
               ),
             ),
             const SizedBox(height: 4),
-            Text(
-              '${pnl >= 0 ? '+' : ''}₹${pnl.toStringAsFixed(2)} '
-              '(${pct.toStringAsFixed(2)}%)',
-              style: TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.bold,
-                color: pnl >= 0 ? Colors.green[700] : Colors.red[700],
-              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  pnl >= 0 ? Icons.arrow_upward : Icons.arrow_downward,
+                  size: 17,
+                  color: pnl >= 0
+                      ? Colors.green[600]
+                      : Colors.red[600],
+                ),
+                Text(
+                  '₹${pnl.abs().toStringAsFixed(2)} '
+                  '(${pct.abs().toStringAsFixed(2)}%)',
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.bold,
+                    color: pnl >= 0
+                        ? Colors.green[600]
+                        : Colors.red[600],
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -272,36 +357,58 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _quickMetrics() {
-    return Row(
-      children: [
-        Expanded(
-          child: _metricCard(
-            'Invested',
-            totalInvested,
-            Icons.account_balance_wallet_outlined,
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: _metricCard(
-            'Unrealized P&L',
-            portfolioValue - totalInvested,
-            Icons.trending_up,
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: FutureBuilder<double?>(
-            future: lotManager.getLatestXirr('Overall'),
-            builder: (_, snapshot) => _metricCard(
-              'XIRR',
-              snapshot.data ?? 0,
-              Icons.percent,
-              suffix: snapshot.hasData ? '%' : '--',
-            ),
-          ),
-        ),
-      ],
+    return FutureBuilder<double>(
+      future: realizedGain(),
+      builder: (context, snapshot) {
+        final realized = snapshot.data ?? 0;
+
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final columns = constraints.maxWidth < 700 ? 2 : 4;
+
+            return GridView.count(
+              crossAxisCount: columns,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              crossAxisSpacing: 10,
+              mainAxisSpacing: 10,
+              childAspectRatio: columns == 2 ? 2.0 : 1.65,
+              children: [
+                _metricCard(
+                  'Invested',
+                  totalInvested,
+                  Icons.account_balance_wallet_outlined,
+                  iconColor: const Color(0xFF7C3AED),
+                  iconBackground: const Color(0xFFF3E8FF),
+                ),
+                _metricCard(
+                  'Wallet Balance',
+                  walletBalance,
+                  Icons.account_balance,
+                  iconColor: const Color(0xFF16A34A),
+                  iconBackground: const Color(0xFFDCFCE7),
+                ),
+                _metricCard(
+                  'Unrealized P&L',
+                  portfolioValue - totalInvested,
+                  Icons.trending_up,
+                  signed: true,
+                  iconColor: const Color(0xFF2563EB),
+                  iconBackground: const Color(0xFFDBEAFE),
+                ),
+                _metricCard(
+                  'Realized P&L',
+                  realized,
+                  Icons.monetization_on_outlined,
+                  signed: true,
+                  iconColor: const Color(0xFFF59E0B),
+                  iconBackground: const Color(0xFFFEF3C7),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 
@@ -309,28 +416,65 @@ class _DashboardScreenState extends State<DashboardScreen> {
     String title,
     double value,
     IconData icon, {
-    String suffix = '',
+    bool signed = false,
+    Color iconColor = Colors.blue,
+    Color iconBackground = const Color(0xFFEFF6FF),
   }) {
+    final positive = value >= 0;
+
     return Card(
-      elevation: 0,
+      elevation: 1,
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: Colors.grey.shade200),
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
+        padding: const EdgeInsets.all(14),
+        child: Row(
           children: [
-            Icon(icon, size: 22),
-            const SizedBox(height: 6),
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 12),
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: iconBackground,
+                borderRadius: BorderRadius.circular(13),
+              ),
+              child: Icon(
+                icon,
+                color: iconColor,
+                size: 23,
+              ),
             ),
-            const SizedBox(height: 4),
-            Text(
-              suffix == '%'
-                  ? '${value.toStringAsFixed(2)}%'
-                  : '₹${value.toStringAsFixed(0)}',
-              style: const TextStyle(fontWeight: FontWeight.bold),
-              textAlign: TextAlign.center,
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: Color(0xFF667085),
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    '${signed && positive ? '+' : ''}'
+                    '₹${value.toStringAsFixed(2)}',
+                    style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.bold,
+                      color: signed
+                          ? (positive
+                              ? Colors.green[700]
+                              : Colors.red[700])
+                          : const Color(0xFF101828),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -342,108 +486,309 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final stock = stockValue;
     final mtf = mtfFunds + mtfGain;
     final crypto = cryptoValue;
+    final options = 0.0;
+
+    final total = stock + mtf + crypto + options;
 
     return Card(
-      elevation: 0,
+      elevation: 1,
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: BorderSide(color: Colors.grey.shade200),
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(18),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Asset Summary',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Asset Summary',
+                    style: TextStyle(
+                      fontSize: 19,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => open(const OpenPositionsScreen()),
+                  child: const Text('View Details →'),
+                ),
+              ],
             ),
             const SizedBox(height: 12),
-            _assetRow('Stock', stock),
-            _assetRow('MTF', mtf),
-            _assetRow('Crypto', crypto),
+
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final compact = constraints.maxWidth < 600;
+
+                final chart = SizedBox(
+                  width: compact ? 190 : 240,
+                  height: 190,
+                  child: CustomPaint(
+                    painter: _AssetDonutPainter(
+                      values: [stock, mtf, options, crypto],
+                    ),
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            '₹${(total / 100000).toStringAsFixed(2)}L',
+                            style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const Text(
+                            'Total Value',
+                            style: TextStyle(
+                              color: Color(0xFF667085),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+
+                final rows = Column(
+                  children: [
+                    _assetRow(
+                      'Stock',
+                      stock,
+                      const Color(0xFF8B5CF6),
+                      total,
+                    ),
+                    _assetRow(
+                      'MTF',
+                      mtf,
+                      const Color(0xFF3B82F6),
+                      total,
+                    ),
+                    _assetRow(
+                      'Options',
+                      options,
+                      const Color(0xFFF97316),
+                      total,
+                    ),
+                    _assetRow(
+                      'Crypto',
+                      crypto,
+                      const Color(0xFF14B8A6),
+                      total,
+                    ),
+                  ],
+                );
+
+                if (compact) {
+                  return Column(
+                    children: [
+                      chart,
+                      const SizedBox(height: 10),
+                      rows,
+                    ],
+                  );
+                }
+
+                return Row(
+                  children: [
+                    chart,
+                    const SizedBox(width: 28),
+                    Expanded(child: rows),
+                  ],
+                );
+              },
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _assetRow(String name, double value) {
-    final percent =
-        portfolioValue == 0 ? 0 : value / portfolioValue * 100;
+  Widget _assetRow(
+    String name,
+    double value,
+    Color color,
+    double total,
+  ) {
+    final percentage = total == 0 ? 0 : value / total * 100;
 
-    return ListTile(
-      dense: true,
-      contentPadding: EdgeInsets.zero,
-      title: Text(name),
-      subtitle: Text('${percent.toStringAsFixed(1)}%'),
-      trailing: Text(
-        '₹${value.toStringAsFixed(2)}',
-        style: const TextStyle(fontWeight: FontWeight.bold),
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 11),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: Colors.grey.shade200),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 11,
+            height: 11,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              name,
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 110,
+            child: Text(
+              '₹${value.toStringAsFixed(2)}',
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 70,
+            child: Text(
+              '${percentage.toStringAsFixed(1)}%',
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                color: Color(0xFF667085),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 
   Widget _quickActions() {
-    return GridView.count(
-      crossAxisCount: 4,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      crossAxisSpacing: 8,
-      mainAxisSpacing: 8,
-      childAspectRatio: 1.05,
-      children: [
-        _action(
-          Icons.business_center,
-          'Open Positions',
-          () => open(const OpenPositionsScreen()),
+    return Card(
+      elevation: 1,
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: BorderSide(color: Colors.grey.shade200),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Quick Actions',
+              style: TextStyle(
+                fontSize: 19,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 14),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final count = constraints.maxWidth < 600 ? 2 : 4;
+
+                return GridView.count(
+                  crossAxisCount: count,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  childAspectRatio: 1.5,
+                  children: [
+                    _action(
+                      Icons.business_center_outlined,
+                      'Open Positions',
+                      const Color(0xFF2563EB),
+                      const Color(0xFFEFF6FF),
+                      () => open(const OpenPositionsScreen()),
+                    ),
+                    _action(
+                      Icons.add,
+                      'Add Stock / MTF',
+                      const Color(0xFF16A34A),
+                      const Color(0xFFF0FDF4),
+                      () => open(const AddPurchaseScreen()),
+                    ),
+                    _action(
+                      Icons.show_chart,
+                      'Add Option',
+                      const Color(0xFF9333EA),
+                      const Color(0xFFFAF5FF),
+                      () => open(const OptionsScreen()),
+                    ),
+                    _action(
+                      Icons.currency_bitcoin,
+                      'Add Crypto',
+                      const Color(0xFFF97316),
+                      const Color(0xFFFFF7ED),
+                      () => open(const AddPurchaseScreen()),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ],
         ),
-        _action(
-          Icons.add,
-          'Add Stock / MTF',
-          () => open(const AddPurchaseScreen()),
-        ),
-        _action(
-          Icons.show_chart,
-          'Add Option',
-          () => open(const OptionsScreen()),
-        ),
-        _action(
-          Icons.currency_bitcoin,
-          'Add Crypto',
-          () => open(const AddPurchaseScreen()),
-        ),
-      ],
+      ),
     );
   }
 
   Widget _action(
     IconData icon,
     String label,
+    Color color,
+    Color background,
     VoidCallback onTap,
   ) {
-    return Card(
-      elevation: 0,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(8),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon),
-              const SizedBox(height: 6),
-              Text(
-                label,
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 11),
-              ),
-            ],
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(15),
+      child: Container(
+        decoration: BoxDecoration(
+          color: background,
+          borderRadius: BorderRadius.circular(15),
+          border: Border.all(
+            color: color.withOpacity(0.12),
           ),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 45,
+              height: 45,
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.10),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                icon,
+                color: color,
+                size: 24,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
+
 
   Widget _summaryCard() {
     return Card(

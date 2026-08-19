@@ -1374,36 +1374,135 @@ class XirrScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('XIRR / Performance')),
+      appBar: AppBar(
+        title: const Text('XIRR / Performance'),
+      ),
       body: FutureBuilder<Map<String, double?>>(
         future: _load(),
         builder: (context, snapshot) {
-          if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(
+              child: CircularProgressIndicator(),
+            );
           }
+
+          if (snapshot.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.error_outline,
+                      size: 48,
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Unable to load XIRR',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '${snapshot.error}',
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+
+          final data = snapshot.data ?? {};
 
           return ListView(
             padding: const EdgeInsets.all(16),
-            children: snapshot.data!.entries.map((entry) {
-              final value = entry.value;
-
-              return Card(
-                elevation: 0,
-                child: ListTile(
-                  title: Text(entry.key),
-                  trailing: Text(
-                    value == null
-                        ? '--'
-                        : '${(value * 100).toStringAsFixed(2)}%',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              );
-            }).toList(),
+            children: [
+              _xirrCard(
+                'Stock',
+                data['Stock'],
+                Icons.show_chart,
+                const Color(0xFF2563EB),
+                const Color(0xFFEFF6FF),
+              ),
+              _xirrCard(
+                'MTF',
+                data['MTF'],
+                Icons.account_balance,
+                const Color(0xFF16A34A),
+                const Color(0xFFF0FDF4),
+              ),
+              _xirrCard(
+                'Options',
+                data['Option'],
+                Icons.trending_up,
+                const Color(0xFF9333EA),
+                const Color(0xFFFAF5FF),
+              ),
+              _xirrCard(
+                'Crypto',
+                data['Crypto'],
+                Icons.currency_bitcoin,
+                const Color(0xFFF97316),
+                const Color(0xFFFFF7ED),
+              ),
+            ],
           );
         },
+      ),
+    );
+  }
+
+  Widget _xirrCard(
+    String title,
+    double? value,
+    IconData icon,
+    Color color,
+    Color background,
+  ) {
+    return Card(
+      elevation: 1,
+      color: background,
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: color.withOpacity(0.15),
+        ),
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 18,
+          vertical: 8,
+        ),
+        leading: CircleAvatar(
+          backgroundColor: color.withOpacity(0.12),
+          child: Icon(icon, color: color),
+        ),
+        title: Text(
+          title,
+          style: const TextStyle(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        subtitle: const Text('Annualized return'),
+        trailing: Text(
+          value == null
+              ? '--'
+              : '${(value * 100).toStringAsFixed(2)}%',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: value == null
+                ? Colors.grey
+                : (value >= 0
+                    ? Colors.green[700]
+                    : Colors.red[700]),
+          ),
+        ),
       ),
     );
   }
@@ -1417,12 +1516,19 @@ class XirrScreen extends StatelessWidget {
       'Crypto',
       'Option',
     ]) {
-      result[type] = await lotManager.getLatestXirr(type);
+      try {
+        result[type] = await lotManager
+            .getLatestXirr(type)
+            .timeout(const Duration(seconds: 5));
+      } catch (_) {
+        result[type] = null;
+      }
     }
 
     return result;
   }
 }
+
 
 class MoreScreen extends StatelessWidget {
   const MoreScreen({super.key});
@@ -2987,72 +3093,187 @@ class ClosedScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Closed / Completed Trades'),
+        title: const Text('Closed Trades'),
       ),
-      body: FutureBuilder(
-        future: Future.wait([
-          lotManager.getClosedPositions(),
-          lotManager.getOptionsTrades(),
-        ]),
+      body: FutureBuilder<Map<String, List<Map<String, dynamic>>>>(
+        future: _load(),
         builder: (context, snapshot) {
-          if (!snapshot.hasData) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(
               child: CircularProgressIndicator(),
             );
           }
 
-          final closed =
-              snapshot.data![0] as List<Map<String, dynamic>>;
-          final options =
-              snapshot.data![1] as List<Map<String, dynamic>>;
+          if (snapshot.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  'Unable to load closed trades.\n\n${snapshot.error}',
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            );
+          }
+
+          final closed = snapshot.data?['closed'] ?? [];
+          final options = snapshot.data?['options'] ?? [];
 
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              const Text(
+              _sectionTitle(
                 'Closed Positions',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
+                Icons.check_circle_outline,
+                const Color(0xFF2563EB),
               ),
-              ...closed.map(
-                (row) => ListTile(
-                  title: Text(
-                    '${row['symbol']} • ${row['asset_type']}',
-                  ),
-                  trailing: Text(
-                    '₹${(row['net_profit_loss'] as num).toStringAsFixed(2)}',
-                  ),
-                ),
-              ),
-              const Divider(height: 30),
-              const Text(
+              if (closed.isEmpty)
+                _emptyCard('No closed positions yet.')
+              else
+                ...closed.map(_closedRow),
+
+              const SizedBox(height: 20),
+
+              _sectionTitle(
                 'Options',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
+                Icons.show_chart,
+                const Color(0xFF9333EA),
               ),
-              ...options.map(
-                (row) => ListTile(
-                  title: Text(
-                    '${row['underlying']} '
-                    '${row['strike_price']} '
-                    '${row['option_type']}',
-                  ),
-                  subtitle: Text(
-                    'Buy ₹${row['buy_price']} → '
-                    'Sell ₹${row['sell_price']}',
-                  ),
-                  trailing: Text(
-                    '₹${(row['net_profit_loss'] as num).toStringAsFixed(2)}',
-                  ),
-                ),
-              ),
+              if (options.isEmpty)
+                _emptyCard('No closed option trades yet.')
+              else
+                ...options.map(_optionRow),
             ],
           );
         },
+      ),
+    );
+  }
+
+  Future<Map<String, List<Map<String, dynamic>>>> _load() async {
+    try {
+      final closed = await lotManager
+          .getClosedPositions()
+          .timeout(const Duration(seconds: 5));
+
+      final options = await lotManager
+          .getOptionsTrades()
+          .timeout(const Duration(seconds: 5));
+
+      return {
+        'closed': closed,
+        'options': options,
+      };
+    } catch (e) {
+      return {
+        'closed': [],
+        'options': [],
+      };
+    }
+  }
+
+  Widget _sectionTitle(
+    String title,
+    IconData icon,
+    Color color,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 18,
+            backgroundColor: color.withOpacity(0.10),
+            child: Icon(
+              icon,
+              color: color,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 19,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _emptyCard(String text) {
+    return Card(
+      elevation: 0,
+      color: const Color(0xFFF8FAFC),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Text(
+          text,
+          style: const TextStyle(
+            color: Color(0xFF667085),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _closedRow(Map<String, dynamic> row) {
+    final pnl = (row['net_profit_loss'] as num?)?.toDouble() ?? 0;
+
+    return Card(
+      elevation: 1,
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        title: Text(
+          '${row['symbol']} • ${row['asset_type']}',
+          style: const TextStyle(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        subtitle: const Text('Closed position'),
+        trailing: Text(
+          '${pnl >= 0 ? '+' : ''}₹${pnl.toStringAsFixed(2)}',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: pnl >= 0
+                ? Colors.green[700]
+                : Colors.red[700],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _optionRow(Map<String, dynamic> row) {
+    final pnl =
+        (row['net_profit_loss'] as num?)?.toDouble() ?? 0;
+
+    return Card(
+      elevation: 1,
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        title: Text(
+          '${row['underlying']} '
+          '${row['strike_price']} '
+          '${row['option_type']}',
+          style: const TextStyle(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        subtitle: Text(
+          'Buy ₹${row['buy_price']} → Sell ₹${row['sell_price']}',
+        ),
+        trailing: Text(
+          '${pnl >= 0 ? '+' : ''}₹${pnl.toStringAsFixed(2)}',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: pnl >= 0
+                ? Colors.green[700]
+                : Colors.red[700],
+          ),
+        ),
       ),
     );
   }

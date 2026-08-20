@@ -1,5 +1,7 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show rootBundle;
+import 'package:csv/csv.dart';
 
 import 'lot.dart';
 import 'lot_manager.dart';
@@ -22,10 +24,69 @@ class TradingTrackerApp extends StatelessWidget {
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
-        scaffoldBackgroundColor: const Color(0xFFF5F7FA),
+        scaffoldBackgroundColor: Colors.white,
       ),
       home: const DashboardScreen(),
     );
+  }
+}
+
+
+class _AssetDonutPainter extends CustomPainter {
+  final List<double> values;
+
+  _AssetDonutPainter({required this.values});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final colors = [
+      const Color(0xFF8B5CF6),
+      const Color(0xFF3B82F6),
+      const Color(0xFFF97316),
+      const Color(0xFF14B8A6),
+    ];
+
+    final total = values.fold<double>(0, (a, b) => a + b);
+    if (total <= 0) return;
+
+    final center = size.center(Offset.zero);
+    final radius = size.shortestSide / 2 - 14;
+
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = radius * 0.28
+      ..strokeCap = StrokeCap.butt;
+
+    double startAngle = -3.1415926535 / 2;
+
+    for (var i = 0; i < values.length; i++) {
+      if (values[i] <= 0) continue;
+
+      final sweep =
+          values[i] / total * 2 * 3.1415926535;
+
+      paint.color = colors[i];
+
+      canvas.drawArc(
+        Rect.fromCircle(
+          center: center,
+          radius: radius,
+        ),
+        startAngle,
+        sweep - 0.025,
+        false,
+        paint,
+      );
+
+      startAngle += sweep;
+    }
+  }
+
+  @override
+  bool shouldRepaint(
+    covariant _AssetDonutPainter oldDelegate,
+  ) {
+    return oldDelegate.values != values;
   }
 }
 
@@ -162,30 +223,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text(
-          'Trading Tracker',
+          'Dashboard',
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
         actions: [
-          IconButton(
-            tooltip: 'Wallet',
-            onPressed: () => open(WalletScreen(accounts: accounts)),
-            icon: const Icon(Icons.account_balance_wallet_outlined),
+          const Padding(
+            padding: EdgeInsets.only(right: 6),
+            child: Center(
+              child: Text(
+                'Hi, Pro Trader Harshit',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF475467),
+                ),
+              ),
+            ),
           ),
-          PopupMenuButton<String>(
-            onSelected: (value) {
-              if (value == 'backup') backup();
-              if (value == 'restore') restore();
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(
-                value: 'backup',
-                child: Text('Backup Data'),
-              ),
-              PopupMenuItem(
-                value: 'restore',
-                child: Text('Restore Data'),
-              ),
-            ],
+          IconButton(
+            tooltip: 'More',
+            onPressed: () => open(const MoreScreen()),
+            icon: const Icon(Icons.more_horiz),
           ),
         ],
       ),
@@ -194,47 +252,562 @@ class _DashboardScreenState extends State<DashboardScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            _summaryCard(),
-            const SizedBox(height: 12),
-            _xirrCard(),
-            const SizedBox(height: 18),
+            InkWell(
+              borderRadius: BorderRadius.circular(18),
+              onTap: () => open(const PortfolioBreakdownScreen()),
+              child: _heroPortfolioCard(),
+            ),
+            const SizedBox(height: 14),
+            _quickMetrics(),
+            const SizedBox(height: 14),
+            _assetSummary(),
+            const SizedBox(height: 14),
+            const Text(
+              'Quick Actions',
+              style: TextStyle(
+                fontSize: 19,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 10),
+            _quickActions(),
+          ],
+        ),
+      ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: 0,
+        onDestinationSelected: (index) {
+          if (index == 1) open(const OpenPositionsScreen());
+          if (index == 2) open(const ClosedScreen());
+          if (index == 3) open(const XirrScreen());
+          if (index == 4) open(const MoreScreen());
+        },
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.home_outlined),
+            selectedIcon: Icon(Icons.home),
+            label: 'Dashboard',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.business_center_outlined),
+            label: 'Open Positions',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.history),
+            label: 'Closed',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.show_chart),
+            label: 'XIRR',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.more_horiz),
+            label: 'More',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _heroPortfolioCard() {
+    final pnl = portfolioValue - totalInvested;
+    final pct = totalInvested == 0 ? 0 : pnl / totalInvested * 100;
+
+    return Card(
+      elevation: 1,
+      color: const Color(0xFFEAF2FF),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: const BorderSide(
+          color: Color(0xFFBFD7FF),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: 24,
+          vertical: 22,
+        ),
+        child: Column(
+          children: [
+            const Text(
+              'Total Portfolio Value',
+              style: TextStyle(
+                fontSize: 15,
+                color: Color(0xFF5F6B7A),
+              ),
+            ),
+            const SizedBox(height: 5),
+            Text(
+              '₹${portfolioValue.toStringAsFixed(2)}',
+              style: const TextStyle(
+                fontSize: 32,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF101828),
+              ),
+            ),
+            const SizedBox(height: 4),
             Row(
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Expanded(
-                  child: Text(
-                    'Open Positions',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
+                Icon(
+                  pnl >= 0 ? Icons.arrow_upward : Icons.arrow_downward,
+                  size: 17,
+                  color: pnl >= 0
+                      ? Colors.green[600]
+                      : Colors.red[600],
+                ),
+                Text(
+                  '₹${pnl.abs().toStringAsFixed(2)} '
+                  '(${pct.abs().toStringAsFixed(2)}%)',
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.bold,
+                    color: pnl >= 0
+                        ? Colors.green[600]
+                        : Colors.red[600],
                   ),
                 ),
-                FilledButton.icon(
-                  onPressed: () => open(const AddPurchaseScreen()),
-                  icon: const Icon(Icons.add),
-                  label: const Text('Add'),
-                ),
               ],
-            ),
-            const SizedBox(height: 8),
-            ..._positionGroups(),
-            const SizedBox(height: 12),
-            FilledButton.tonalIcon(
-              onPressed: () => open(const OptionsScreen()),
-              icon: const Icon(Icons.show_chart),
-              label: const Text('Add Options Trade'),
-            ),
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
-              onPressed: () => open(const ClosedScreen()),
-              icon: const Icon(Icons.history),
-              label: const Text('Closed Positions / Options'),
             ),
           ],
         ),
       ),
     );
   }
+
+  Widget _quickMetrics() {
+    return FutureBuilder<double>(
+      future: realizedGain(),
+      builder: (context, snapshot) {
+        final realized = snapshot.data ?? 0;
+
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final columns = constraints.maxWidth < 700 ? 2 : 4;
+
+            return GridView.count(
+              crossAxisCount: columns,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              crossAxisSpacing: 10,
+              mainAxisSpacing: 10,
+              childAspectRatio: columns == 2 ? 2.0 : 1.65,
+              children: [
+                _metricCard(
+                  'Invested',
+                  totalInvested,
+                  Icons.account_balance_wallet_outlined,
+                  iconColor: const Color(0xFF7C3AED),
+                  iconBackground: const Color(0xFFF3E8FF),
+                ),
+                _metricCard(
+                  'Wallet Balance',
+                  walletBalance,
+                  Icons.account_balance,
+                  iconColor: const Color(0xFF16A34A),
+                  iconBackground: const Color(0xFFDCFCE7),
+                ),
+                _metricCard(
+                  'Unrealized P&L',
+                  portfolioValue - totalInvested,
+                  Icons.trending_up,
+                  signed: true,
+                  iconColor: const Color(0xFF2563EB),
+                  iconBackground: const Color(0xFFDBEAFE),
+                ),
+                _metricCard(
+                  'Realized P&L',
+                  realized,
+                  Icons.monetization_on_outlined,
+                  signed: true,
+                  iconColor: const Color(0xFFF59E0B),
+                  iconBackground: const Color(0xFFFEF3C7),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _metricCard(
+    String title,
+    double value,
+    IconData icon, {
+    bool signed = false,
+    Color iconColor = Colors.blue,
+    Color iconBackground = const Color(0xFFEFF6FF),
+  }) {
+    final positive = value >= 0;
+
+    return Card(
+      elevation: 1,
+      color: const Color(0xFFF8FBFF),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: Colors.grey.shade200),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: iconBackground,
+                borderRadius: BorderRadius.circular(13),
+              ),
+              child: Icon(
+                icon,
+                color: iconColor,
+                size: 23,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: Color(0xFF667085),
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    '${signed && positive ? '+' : ''}'
+                    '₹${value.toStringAsFixed(2)}',
+                    style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.bold,
+                      color: signed
+                          ? (positive
+                              ? Colors.green[700]
+                              : Colors.red[700])
+                          : const Color(0xFF101828),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _assetSummary() {
+    final stock = stockValue;
+    final mtf = mtfFunds + mtfGain;
+    final crypto = cryptoValue;
+    final options = 0.0;
+
+    final total = stock + mtf + crypto + options;
+
+    return Card(
+      elevation: 1,
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: BorderSide(color: Colors.grey.shade200),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Asset Summary',
+                    style: TextStyle(
+                      fontSize: 19,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => open(const OpenPositionsScreen()),
+                  child: const Text('View Details →'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final compact = constraints.maxWidth < 600;
+
+                final chart = SizedBox(
+                  width: compact ? 190 : 240,
+                  height: 190,
+                  child: CustomPaint(
+                    painter: _AssetDonutPainter(
+                      values: [stock, mtf, options, crypto],
+                    ),
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            '₹${(total / 100000).toStringAsFixed(2)}L',
+                            style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const Text(
+                            'Total Value',
+                            style: TextStyle(
+                              color: Color(0xFF667085),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+
+                final rows = Column(
+                  children: [
+                    _assetRow(
+                      'Stock',
+                      stock,
+                      const Color(0xFF8B5CF6),
+                      total,
+                    ),
+                    _assetRow(
+                      'MTF',
+                      mtf,
+                      const Color(0xFF3B82F6),
+                      total,
+                    ),
+                    _assetRow(
+                      'Options',
+                      options,
+                      const Color(0xFFF97316),
+                      total,
+                    ),
+                    _assetRow(
+                      'Crypto',
+                      crypto,
+                      const Color(0xFF14B8A6),
+                      total,
+                    ),
+                  ],
+                );
+
+                if (compact) {
+                  return Column(
+                    children: [
+                      chart,
+                      const SizedBox(height: 10),
+                      rows,
+                    ],
+                  );
+                }
+
+                return Row(
+                  children: [
+                    chart,
+                    const SizedBox(width: 28),
+                    Expanded(child: rows),
+                  ],
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _assetRow(
+    String name,
+    double value,
+    Color color,
+    double total,
+  ) {
+    final percentage = total == 0 ? 0 : value / total * 100;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 11),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: Colors.grey.shade200),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 11,
+            height: 11,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              name,
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 110,
+            child: Text(
+              '₹${value.toStringAsFixed(2)}',
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 70,
+            child: Text(
+              '${percentage.toStringAsFixed(1)}%',
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                color: Color(0xFF667085),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _quickActions() {
+    return Card(
+      elevation: 1,
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: BorderSide(color: Colors.grey.shade200),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Quick Actions',
+              style: TextStyle(
+                fontSize: 19,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 14),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final count = constraints.maxWidth < 600 ? 2 : 4;
+
+                return GridView.count(
+                  crossAxisCount: count,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  childAspectRatio: 1.5,
+                  children: [
+                    _action(
+                      Icons.business_center_outlined,
+                      'Open Positions',
+                      const Color(0xFF2563EB),
+                      const Color(0xFFEFF6FF),
+                      () => open(const OpenPositionsScreen()),
+                    ),
+                    _action(
+                      Icons.add,
+                      'Add Stock / MTF',
+                      const Color(0xFF16A34A),
+                      const Color(0xFFF0FDF4),
+                      () => open(const AddPurchaseScreen()),
+                    ),
+                    _action(
+                      Icons.show_chart,
+                      'Add Option',
+                      const Color(0xFF9333EA),
+                      const Color(0xFFFAF5FF),
+                      () => open(const OptionsScreen()),
+                    ),
+                    _action(
+                      Icons.currency_bitcoin,
+                      'Add Crypto',
+                      const Color(0xFFF97316),
+                      const Color(0xFFFFF7ED),
+                      () => open(const AddPurchaseScreen()),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _action(
+    IconData icon,
+    String label,
+    Color color,
+    Color background,
+    VoidCallback onTap,
+  ) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(15),
+      child: Container(
+        decoration: BoxDecoration(
+          color: background,
+          borderRadius: BorderRadius.circular(15),
+          border: Border.all(
+            color: color.withOpacity(0.12),
+          ),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 45,
+              height: 45,
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.10),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                icon,
+                color: color,
+                size: 24,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
 
   Widget _summaryCard() {
     return Card(
@@ -245,7 +818,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
           children: [
             _metric('Total Invested Value', totalInvested),
             _metric('Wallet Balance', walletBalance),
-            _metric('Portfolio Value', portfolioValue),
+            InkWell(
+              onTap: () => open(const PortfolioBreakdownScreen()),
+              child: _metric('Portfolio Value', portfolioValue),
+            ),
             _metric(
               'Unrealized Gain/Loss',
               portfolioValue - totalInvested,
@@ -422,6 +998,931 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 }
 
+
+// OPEN_POSITIONS_V2
+class OpenPositionsScreen extends StatefulWidget {
+  const OpenPositionsScreen({super.key});
+
+  @override
+  State<OpenPositionsScreen> createState() => _OpenPositionsScreenState();
+}
+
+class _OpenPositionsScreenState extends State<OpenPositionsScreen> {
+  List<Lot> lots = [];
+  String filter = 'All';
+
+  @override
+  void initState() {
+    super.initState();
+    refresh();
+  }
+
+  Future<void> refresh() async {
+    final rows = await lotManager.getAllOpenLots();
+    if (!mounted) return;
+    setState(() => lots = rows);
+  }
+
+  List<List<Lot>> get groups {
+    final map = <String, List<Lot>>{};
+    for (final lot in lots) {
+      if (filter != 'All' && lot.assetType != filter) continue;
+      map.putIfAbsent('${lot.assetType}|${lot.symbol}', () => []).add(lot);
+    }
+    return map.values.toList();
+  }
+
+  Future<void> _updateGroupPrice(List<Lot> group) async {
+    final controller = TextEditingController(
+      text: group.first.currentPrice?.toStringAsFixed(2) ?? '',
+    );
+    final value = await showDialog<double>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Update Price • ${group.first.symbol}'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(
+            labelText: 'Current Price',
+            prefixText: '₹ ',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final p = double.tryParse(controller.text);
+              if (p != null && p > 0) Navigator.pop(dialogContext, p);
+            },
+            child: const Text('Update'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (value == null) return;
+    for (final lot in group) {
+      await lotManager.updateCurrentPrice(lotId: lot.id, price: value);
+    }
+    await refresh();
+  }
+
+  Future<void> _openGroup(List<Lot> group) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PositionDetailsScreen(lots: group),
+      ),
+    );
+    await refresh();
+  }
+
+  Widget _filterChip(String label) {
+    final selected = filter == label;
+    return ChoiceChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: (_) => setState(() => filter = label),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Open Positions')),
+      body: RefreshIndicator(
+        onRefresh: refresh,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  _filterChip('All'),
+                  const SizedBox(width: 8),
+                  _filterChip('Stock'),
+                  const SizedBox(width: 8),
+                  _filterChip('MTF'),
+                  const SizedBox(width: 8),
+                  _filterChip('Crypto'),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            FilledButton.icon(
+              onPressed: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AddPurchaseScreen()),
+                );
+                await refresh();
+              },
+              icon: const Icon(Icons.add),
+              label: const Text('Add Position'),
+            ),
+            const SizedBox(height: 14),
+            if (groups.isEmpty)
+              const Card(
+                child: Padding(
+                  padding: EdgeInsets.all(28),
+                  child: Center(child: Text('No open positions')),
+                ),
+              )
+            else
+              ...groups.map(_positionCard),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _positionCard(List<Lot> group) {
+    final first = group.first;
+    final quantity = group.fold<double>(0, (s, l) => s + l.remainingQuantity);
+    final lotsCount = group.length;
+    final cost = group.fold<double>(
+      0,
+      (s, l) => s + l.buyPrice * l.remainingQuantity,
+    );
+    final avg = quantity == 0 ? 0 : cost / quantity;
+    final ltp = first.currentPrice ?? first.buyPrice;
+    final market = group.fold<double>(0, (s, l) => s + l.remainingQuantity * (l.currentPrice ?? l.buyPrice));
+    final gross = group.fold<double>(0, (s, l) => s + l.grossUnrealisedPnL);
+    final net = group.fold<double>(0, (s, l) => s + l.netUnrealisedPnL);
+    final invested = group.fold<double>(0, (s, l) => s + l.investedValue);
+    final pnl = first.isMtf ? net : market - invested;
+    final pct = invested == 0 ? 0 : pnl / invested * 100;
+
+    return Card(
+      elevation: 1,
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: () => _openGroup(group),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          first.companyName?.isNotEmpty == true ? first.companyName! : first.symbol,
+                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 3),
+                        Text('${first.symbol} • ${first.assetType}', style: const TextStyle(color: Color(0xFF667085))),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Update Current Price',
+                    onPressed: () => _updateGroupPrice(group),
+                    icon: const Icon(Icons.edit_outlined),
+                  ),
+                  const Icon(Icons.chevron_right),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Text(
+                '${quantity.toStringAsFixed(quantity % 1 == 0 ? 0 : 2)} Shares (${lotsCount} ${lotsCount == 1 ? 'Lot' : 'Lots'})',
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  _stat('Average Price', '₹${avg.toStringAsFixed(2)}'),
+                  _stat('LTP', '₹${ltp.toStringAsFixed(2)}'),
+                ],
+              ),
+              const Divider(height: 24),
+              if (first.isMtf) ...[
+                Row(
+                  children: [
+                    Expanded(child: _pnlStat('Gross P&L', gross, invested)),
+                    Expanded(child: _pnlStat('Net P&L', net, invested)),
+                  ],
+                ),
+              ] else
+                _pnlStat('P&L', pnl, invested),
+              const SizedBox(height: 8),
+              Text(
+                '${pnl >= 0 ? '+' : ''}₹${pnl.toStringAsFixed(2)}  (${pct >= 0 ? '+' : ''}${pct.toStringAsFixed(2)}%)',
+                style: TextStyle(fontWeight: FontWeight.bold, color: pnl >= 0 ? Colors.green[700] : Colors.red[700]),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _stat(String label, String value) {
+    return Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: const TextStyle(fontSize: 12, color: Color(0xFF667085))),
+          const SizedBox(height: 4),
+          Text(value, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+        ],
+      ),
+    );
+  }
+
+  Widget _pnlStat(String label, double value, double invested) {
+    final pct = invested == 0 ? 0 : value / invested * 100;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(fontSize: 12, color: Color(0xFF667085))),
+        const SizedBox(height: 4),
+        Text(
+          '${value >= 0 ? '+' : ''}₹${value.toStringAsFixed(2)} (${pct >= 0 ? '+' : ''}${pct.toStringAsFixed(2)}%)',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: value >= 0 ? Colors.green[700] : Colors.red[700]),
+        ),
+      ],
+    );
+  }
+}
+
+class PositionDetailsScreen extends StatefulWidget {
+  final List<Lot> lots;
+
+  const PositionDetailsScreen({super.key, required this.lots});
+
+  @override
+  State<PositionDetailsScreen> createState() => _PositionDetailsScreenState();
+}
+
+class _PositionDetailsScreenState extends State<PositionDetailsScreen> {
+  late List<Lot> lots;
+
+  @override
+  void initState() {
+    super.initState();
+    lots = widget.lots;
+  }
+
+  Future<void> refresh() async {
+    if (lots.isEmpty) return;
+    final all = await lotManager.getAllOpenLots();
+    final symbol = lots.first.symbol;
+    final type = lots.first.assetType;
+    final updated = all.where((l) => l.symbol == symbol && l.assetType == type).toList();
+    if (!mounted) return;
+    setState(() => lots = updated);
+  }
+
+  Future<void> _updatePrice() async {
+    if (lots.isEmpty) return;
+    final controller = TextEditingController(text: lots.first.currentPrice?.toStringAsFixed(2) ?? '');
+    final price = await showDialog<double>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Update Current Price • ${lots.first.symbol}'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(labelText: 'Current Price', prefixText: '₹ '),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () {
+              final value = double.tryParse(controller.text);
+              if (value != null && value > 0) Navigator.pop(dialogContext, value);
+            },
+            child: const Text('Update'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (price == null) return;
+    for (final lot in lots) {
+      await lotManager.updateCurrentPrice(lotId: lot.id, price: price);
+    }
+    await refresh();
+  }
+
+  Future<void> _selectLotAndSquareOff() async {
+    if (lots.isEmpty) return;
+    final selectedId = await showDialog<int>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Select Lot'),
+        content: SizedBox(
+          width: 520,
+          child: ListView.separated(
+            shrinkWrap: true,
+            itemCount: lots.length,
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (_, index) {
+              final lot = lots[index];
+              return ListTile(
+                title: Text('Lot ${index + 1} • ${lot.remainingQuantity.toStringAsFixed(0)} Shares'),
+                subtitle: Text('Buy ₹${lot.buyPrice.toStringAsFixed(2)} • ${lot.purchaseDate.day}/${lot.purchaseDate.month}/${lot.purchaseDate.year}'),
+                onTap: () => Navigator.pop(dialogContext, lot.id),
+              );
+            },
+          ),
+        ),
+        actions: [TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel'))],
+      ),
+    );
+    if (selectedId == null || !mounted) return;
+    final lot = lots.firstWhere((l) => l.id == selectedId);
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => SquareOffScreen(lot: lot)));
+    await refresh();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (lots.isEmpty) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Position Details')),
+        body: const Center(child: Text('Position closed')),
+      );
+    }
+
+    final first = lots.first;
+    final quantity = lots.fold<double>(0, (s, l) => s + l.remainingQuantity);
+    final cost = lots.fold<double>(0, (s, l) => s + l.buyPrice * l.remainingQuantity);
+    final avg = quantity == 0 ? 0 : cost / quantity;
+    final ltp = first.currentPrice ?? first.buyPrice;
+    final market = lots.fold<double>(0, (s, l) => s + l.marketValue);
+    final invested = lots.fold<double>(0, (s, l) => s + l.investedValue);
+    final gross = lots.fold<double>(0, (s, l) => s + l.grossUnrealisedPnL);
+    final net = lots.fold<double>(0, (s, l) => s + l.netUnrealisedPnL);
+    final pnl = first.isMtf ? net : market - invested;
+    final pct = invested == 0 ? 0 : pnl / invested * 100;
+    final mtfInterest = lots.fold<double>(0, (s, l) => s + l.mtfInterest());
+    final myFunds = lots.fold<double>(0, (s, l) => s + l.allocatedMyFunds);
+    final broker = lots.fold<double>(0, (s, l) => s + l.brokerFunded * l.remainingRatio);
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(first.companyName?.isNotEmpty == true ? first.companyName! : first.symbol),
+        actions: [
+          IconButton(tooltip: 'Update Price', onPressed: _updatePrice, icon: const Icon(Icons.price_change_outlined)),
+          IconButton(tooltip: 'Square Off', onPressed: _selectLotAndSquareOff, icon: const Icon(Icons.sell_outlined)),
+        ],
+      ),
+      body: RefreshIndicator(
+        onRefresh: refresh,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Card(
+              elevation: 1,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+              child: Padding(
+                padding: const EdgeInsets.all(18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(first.assetType, style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF667085))),
+                    const SizedBox(height: 8),
+                    Text('${quantity.toStringAsFixed(quantity % 1 == 0 ? 0 : 2)} Shares (${lots.length} ${lots.length == 1 ? 'Lot' : 'Lots'})', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 16),
+                    Row(children: [_stat('Average Price', '₹${avg.toStringAsFixed(2)}'), _stat('LTP', '₹${ltp.toStringAsFixed(2)}')]),
+                    const Divider(height: 26),
+                    if (first.isMtf) ...[
+                      Row(children: [
+                        Expanded(child: _detail('My Funds', myFunds)),
+                        Expanded(child: _detail('Broker Funded', broker)),
+                      ]),
+                      _detail('Gross P&L', gross, signed: true),
+                      _detail('MTF Interest', mtfInterest),
+                      _detail('Net P&L', net, signed: true),
+                    ] else
+                      _detail('P&L', pnl, signed: true),
+                    _detail('P&L %', pct, percent: true, signed: true),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                const Expanded(child: Text('Lots', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold))),
+                Text('${lots.length} ${lots.length == 1 ? 'Lot' : 'Lots'}', style: const TextStyle(color: Color(0xFF667085))),
+              ],
+            ),
+            const SizedBox(height: 10),
+            ...lots.asMap().entries.map((entry) => _lotCard(entry.key + 1, entry.value)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _lotCard(int number, Lot lot) {
+    final invested = lot.investedValue;
+    final gross = lot.grossUnrealisedPnL;
+    final net = lot.netUnrealisedPnL;
+    final pnl = lot.isMtf ? net : lot.unrealisedPnL;
+    final pct = invested == 0 ? 0 : pnl / invested * 100;
+    final interest = lot.mtfInterest();
+
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.only(bottom: 10),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(child: Text('Lot $number • ${lot.remainingQuantity.toStringAsFixed(lot.remainingQuantity % 1 == 0 ? 0 : 2)} Shares', style: const TextStyle(fontWeight: FontWeight.bold))),
+                PopupMenuButton<String>(
+                  onSelected: (value) async {
+                    if (value == 'edit') {
+                      await Navigator.push(context, MaterialPageRoute(builder: (_) => EditLotScreen(lot: lot)));
+                    } else if (value == 'price') {
+                      await Navigator.push(context, MaterialPageRoute(builder: (_) => CurrentPriceScreen(lot: lot)));
+                    } else if (value == 'square') {
+                      await Navigator.push(context, MaterialPageRoute(builder: (_) => SquareOffScreen(lot: lot)));
+                    }
+                    await refresh();
+                  },
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(value: 'edit', child: Text('Edit Lot')),
+                    PopupMenuItem(value: 'price', child: Text('Update Current Price')),
+                    PopupMenuItem(value: 'square', child: Text('Square Off')),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text('Buy ₹${lot.buyPrice.toStringAsFixed(2)} • ${lot.purchaseDate.day}/${lot.purchaseDate.month}/${lot.purchaseDate.year}', style: const TextStyle(color: Color(0xFF667085))),
+            const SizedBox(height: 12),
+            Row(children: [_detail('LTP', '₹${(lot.currentPrice ?? lot.buyPrice).toStringAsFixed(2)}'), _detail('Invested', '₹${invested.toStringAsFixed(2)}')]),
+            if (lot.isMtf) ...[
+              _detail('Gross P&L', gross, signed: true),
+              _detail('MTF Interest', interest),
+              _detail('Net P&L', net, signed: true),
+            ] else
+              _detail('P&L', pnl, signed: true),
+            _detail('P&L %', pct, percent: true, signed: true),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _stat(String label, String value) {
+    return Expanded(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(label, style: const TextStyle(fontSize: 12, color: Color(0xFF667085))),
+        const SizedBox(height: 4),
+        Text(value, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+      ]),
+    );
+  }
+
+  Widget _detail(String label, dynamic value, {bool signed = false, bool percent = false}) {
+    final number = value is num ? value.toDouble() : double.tryParse('$value') ?? 0;
+    final text = percent
+        ? '${number >= 0 ? '+' : ''}${number.toStringAsFixed(2)}%'
+        : '${signed && number >= 0 ? '+' : ''}₹${number.toStringAsFixed(2)}';
+    return ListTile(
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      title: Text(label),
+      trailing: Text(text, style: TextStyle(fontWeight: FontWeight.bold, color: signed ? (number >= 0 ? Colors.green[700] : Colors.red[700]) : null)),
+    );
+  }
+}
+
+
+class PortfolioBreakdownScreen extends StatelessWidget {
+  const PortfolioBreakdownScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<Lot>>(
+      future: lotManager.getAllOpenLots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return Scaffold(
+            appBar: AppBar(title: const Text('Portfolio Breakdown')),
+            body: const Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        final lots = snapshot.data!;
+
+        double value(String type) => lots
+            .where((lot) => lot.assetType == type)
+            .fold(0, (sum, lot) => sum + lot.marketValue);
+
+        double invested(String type) => lots
+            .where((lot) => lot.assetType == type)
+            .fold(0, (sum, lot) => sum + lot.investedValue);
+
+        double gain(String type) => value(type) - invested(type);
+
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('Portfolio Breakdown'),
+          ),
+          body: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              _breakdownCard('Stock', value('Stock'), invested('Stock'), gain('Stock')),
+              _breakdownCard('MTF', value('MTF'), invested('MTF'), gain('MTF')),
+              _breakdownCard('Crypto', value('Crypto'), invested('Crypto'), gain('Crypto')),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _breakdownCard(
+    String title,
+    double portfolio,
+    double invested,
+    double gain,
+  ) {
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 10),
+            _row('Portfolio Value', portfolio),
+            _row('Invested Value', invested),
+            _row('Unrealized Gain/Loss', gain, signed: true),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _row(String label, double value, {bool signed = false}) {
+    return ListTile(
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      title: Text(label),
+      trailing: Text(
+        '${signed && value >= 0 ? '+' : ''}₹${value.toStringAsFixed(2)}',
+        style: TextStyle(
+          fontWeight: FontWeight.bold,
+          color: signed
+              ? (value >= 0 ? Colors.green[700] : Colors.red[700])
+              : null,
+        ),
+      ),
+    );
+  }
+}
+
+
+class PositionDetailsScreen extends StatelessWidget {
+  final Lot lot;
+
+  const PositionDetailsScreen({
+    super.key,
+    required this.lot,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final pnl = lot.marketValue - lot.investedValue;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(lot.symbol),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Card(
+            elevation: 0,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  Text(
+                    lot.assetType,
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 12),
+                  _detail('Total Quantity', lot.remainingQuantity),
+                  _detail('Avg Buy Price', lot.buyPrice),
+                  _detail('Invested', lot.investedValue),
+                  _detail('Unrealized P&L', pnl, signed: true),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'Lot',
+            style: TextStyle(
+              fontSize: 19,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          Card(
+            elevation: 0,
+            child: ListTile(
+              title: Text('${lot.remainingQuantity} Shares / Units'),
+              subtitle: Text(
+                'Buy ₹${lot.buyPrice.toStringAsFixed(2)} • '
+                '${lot.purchaseDate.day}/${lot.purchaseDate.month}/${lot.purchaseDate.year}',
+              ),
+              trailing: PopupMenuButton<String>(
+                onSelected: (value) async {
+                  Widget? screen;
+                  if (value == 'edit') {
+                    screen = EditLotScreen(lot: lot);
+                  } else if (value == 'price') {
+                    screen = CurrentPriceScreen(lot: lot);
+                  } else if (value == 'square') {
+                    screen = SquareOffScreen(lot: lot);
+                  }
+
+                  if (screen != null) {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => screen!),
+                    );
+                  }
+                },
+                itemBuilder: (_) => const [
+                  PopupMenuItem(
+                    value: 'edit',
+                    child: Text('Edit Lot'),
+                  ),
+                  PopupMenuItem(
+                    value: 'price',
+                    child: Text('Update Price'),
+                  ),
+                  PopupMenuItem(
+                    value: 'square',
+                    child: Text('Square Off'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _detail(String label, double value, {bool signed = false}) {
+    return ListTile(
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      title: Text(label),
+      trailing: Text(
+        '${signed && value >= 0 ? '+' : ''}₹${value.toStringAsFixed(2)}',
+        style: TextStyle(
+          fontWeight: FontWeight.bold,
+          color: signed
+              ? (value >= 0 ? Colors.green[700] : Colors.red[700])
+              : null,
+        ),
+      ),
+    );
+  }
+}
+
+class XirrScreen extends StatelessWidget {
+  const XirrScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('XIRR / Performance'),
+      ),
+      body: FutureBuilder<Map<String, double?>>(
+        future: _load(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(
+              child: CircularProgressIndicator(),
+            );
+          }
+
+          if (snapshot.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.error_outline,
+                      size: 48,
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Unable to load XIRR',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '${snapshot.error}',
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+
+          final data = snapshot.data ?? {};
+
+          return ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              _xirrCard(
+                'Stock',
+                data['Stock'],
+                Icons.show_chart,
+                const Color(0xFF2563EB),
+                const Color(0xFFEFF6FF),
+              ),
+              _xirrCard(
+                'MTF',
+                data['MTF'],
+                Icons.account_balance,
+                const Color(0xFF16A34A),
+                const Color(0xFFF0FDF4),
+              ),
+              _xirrCard(
+                'Options',
+                data['Option'],
+                Icons.trending_up,
+                const Color(0xFF9333EA),
+                const Color(0xFFFAF5FF),
+              ),
+              _xirrCard(
+                'Crypto',
+                data['Crypto'],
+                Icons.currency_bitcoin,
+                const Color(0xFFF97316),
+                const Color(0xFFFFF7ED),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _xirrCard(
+    String title,
+    double? value,
+    IconData icon,
+    Color color,
+    Color background,
+  ) {
+    return Card(
+      elevation: 1,
+      color: background,
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: color.withOpacity(0.15),
+        ),
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 18,
+          vertical: 8,
+        ),
+        leading: CircleAvatar(
+          backgroundColor: color.withOpacity(0.12),
+          child: Icon(icon, color: color),
+        ),
+        title: Text(
+          title,
+          style: const TextStyle(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        subtitle: const Text('Annualized return'),
+        trailing: Text(
+          value == null
+              ? '--'
+              : '${(value * 100).toStringAsFixed(2)}%',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: value == null
+                ? Colors.grey
+                : (value >= 0
+                    ? Colors.green[700]
+                    : Colors.red[700]),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<Map<String, double?>> _load() async {
+    final result = <String, double?>{};
+
+    for (final type in [
+      'Stock',
+      'MTF',
+      'Crypto',
+      'Option',
+    ]) {
+      try {
+        result[type] = await lotManager
+            .getLatestXirr(type)
+            .timeout(const Duration(seconds: 5));
+      } catch (_) {
+        result[type] = null;
+      }
+    }
+
+    return result;
+  }
+}
+
+
+class MoreScreen extends StatelessWidget {
+  const MoreScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('More')),
+      body: ListView(
+        children: [
+          ListTile(
+            leading: const Icon(Icons.account_balance_wallet_outlined),
+            title: const Text('Wallet'),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const WalletScreen(accounts: []),
+              ),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.account_balance),
+            title: const Text('Accounts'),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const AccountScreen(),
+              ),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.backup),
+            title: const Text('Backup Database'),
+            onTap: () {},
+          ),
+          ListTile(
+            leading: const Icon(Icons.restore),
+            title: const Text('Restore Database'),
+            onTap: () {},
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class AddPurchaseScreen extends StatefulWidget {
   const AddPurchaseScreen({super.key});
 
@@ -437,9 +1938,10 @@ class _AddPurchaseScreenState extends State<AddPurchaseScreen> {
   List<Map<String, dynamic>> accounts = [];
   List<Map<String, dynamic>> nifty500 = [];
   bool loadingNifty500 = true;
+  bool nifty500Selected = false;
+  bool manualStock = false;
 
   final symbol = TextEditingController();
-  final companyName = TextEditingController();
   final quantity = TextEditingController();
   final price = TextEditingController();
   final charges = TextEditingController(text: '0');
@@ -456,15 +1958,52 @@ class _AddPurchaseScreenState extends State<AddPurchaseScreen> {
 
   Future<void> loadNifty500() async {
     try {
-      final rows = await lotManager.searchNifty500('');
+      final csvText = await rootBundle.loadString(
+        'assets/ind_nifty500list.csv',
+      );
+
+      final rows = csv.decode(csvText);
+
+      final loaded = <Map<String, dynamic>>[];
+
+      for (final row in rows.skip(1)) {
+        if (row.length < 4) continue;
+
+        final companyName = row[0].toString().trim();
+        final symbol = row[2].toString().trim();
+        final series = row[3].toString().trim();
+
+        if (symbol.isEmpty ||
+            companyName.isEmpty ||
+            series != 'EQ') {
+          continue;
+        }
+
+        loaded.add({
+          'symbol': symbol,
+          'company_name': companyName,
+        });
+      }
+
       if (!mounted) return;
+
       setState(() {
-        nifty500 = rows;
+        nifty500 = loaded;
         loadingNifty500 = false;
       });
-    } catch (_) {
+
+      debugPrint(
+        'Loaded NIFTY 500 companies: ${loaded.length}',
+      );
+    } catch (e) {
+      debugPrint('NIFTY 500 CSV load failed: $e');
+
       if (!mounted) return;
-      setState(() => loadingNifty500 = false);
+
+      setState(() {
+        nifty500 = [];
+        loadingNifty500 = false;
+      });
     }
   }
 
@@ -477,7 +2016,6 @@ class _AddPurchaseScreenState extends State<AddPurchaseScreen> {
   void dispose() {
     for (final controller in [
       symbol,
-      companyName,
       quantity,
       price,
       charges,
@@ -527,9 +2065,7 @@ class _AddPurchaseScreenState extends State<AddPurchaseScreen> {
         mtfDailyCharge: assetType == 'MTF'
             ? double.tryParse(mtfDaily.text) ?? 0
             : 0,
-        nifty500AtPurchase:
-            (assetType == 'Stock' || assetType == 'MTF') &&
-            companyName.text.trim().isNotEmpty,
+        nifty500AtPurchase: nifty500Selected,
       );
 
       if (mounted) Navigator.pop(context);
@@ -537,6 +2073,8 @@ class _AddPurchaseScreenState extends State<AddPurchaseScreen> {
       _error('$e');
     }
 
+    // Keep the account lookup in the UI so the selection is visibly tied
+    // to the chosen broker/account.
     debugPrint('Purchase account: ${account['account_name']}');
   }
 
@@ -563,87 +2101,189 @@ class _AddPurchaseScreenState extends State<AddPurchaseScreen> {
       );
     }
 
-    return Autocomplete<Map<String, dynamic>>(
-      displayStringForOption: (stock) {
-        final stockSymbol = '${stock['symbol'] ?? ''}'.trim();
-        final company = '${stock['company_name'] ?? ''}'.trim();
-        return company.isEmpty ? stockSymbol : '$stockSymbol • $company';
-      },
-      optionsBuilder: (TextEditingValue value) {
-        final query = value.text.trim().toLowerCase();
-        if (query.isEmpty) {
-          return const Iterable<Map<String, dynamic>>.empty();
-        }
-        return nifty500.where((stock) {
-          final stockSymbol =
-              '${stock['symbol'] ?? ''}'.toLowerCase();
-          final company =
-              '${stock['company_name'] ?? ''}'.toLowerCase();
-          return stockSymbol.contains(query) || company.contains(query);
-        }).take(30);
-      },
-      onSelected: (stock) {
-        symbol.text =
-            '${stock['symbol'] ?? ''}'.trim().toUpperCase();
-        companyName.text =
-            '${stock['company_name'] ?? ''}'.trim();
-        setState(() {});
-      },
-      fieldViewBuilder: (
-        context,
-        textController,
-        focusNode,
-        onFieldSubmitted,
-      ) {
-        return TextField(
-          controller: textController,
-          focusNode: focusNode,
-          decoration: const InputDecoration(
-            labelText: 'Nifty 500 Stock',
-            hintText: 'Search symbol or company',
-            prefixIcon: Icon(Icons.search),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        OutlinedButton.icon(
+          onPressed: () async {
+            final result =
+                await showDialog<Map<String, dynamic>>(
+              context: context,
+              builder: (dialogContext) {
+                final searchController =
+                    TextEditingController();
+
+                return StatefulBuilder(
+                  builder: (context, setDialogState) {
+                    final query =
+                        searchController.text.trim().toLowerCase();
+
+                    final filtered = nifty500.where((stock) {
+                      if (query.isEmpty) return true;
+
+                      final stockSymbol =
+                          '${stock['symbol'] ?? ''}'.toLowerCase();
+
+                      final company =
+                          '${stock['company_name'] ?? ''}'.toLowerCase();
+
+                      return stockSymbol.contains(query) ||
+                          company.contains(query);
+                    }).take(50).toList();
+
+                    return AlertDialog(
+                      title: const Text('Select Stock'),
+                      content: SizedBox(
+                        width: 550,
+                        height: 500,
+                        child: Column(
+                          children: [
+                            TextField(
+                              controller: searchController,
+                              autofocus: true,
+                              decoration: const InputDecoration(
+                                prefixIcon: Icon(Icons.search),
+                                hintText:
+                                    'Search company or symbol',
+                              ),
+                              onChanged: (_) {
+                                setDialogState(() {});
+                              },
+                            ),
+                            const SizedBox(height: 10),
+                            Expanded(
+                              child: ListView(
+                                children: [
+                                  ...filtered.map(
+                                    (stock) {
+                                      return ListTile(
+                                        leading: const Icon(
+                                          Icons.business,
+                                        ),
+                                        title: Text(
+                                          '${stock['symbol']}',
+                                          style: const TextStyle(
+                                            fontWeight:
+                                                FontWeight.bold,
+                                          ),
+                                        ),
+                                        subtitle: Text(
+                                          '${stock['company_name'] ?? ''}',
+                                        ),
+                                        onTap: () {
+                                          Navigator.of(
+                                            dialogContext,
+                                          ).pop({
+                                            'type': 'nifty500',
+                                            'symbol':
+                                                '${stock['symbol']}',
+                                            'company':
+                                                '${stock['company_name'] ?? ''}',
+                                          });
+                                        },
+                                      );
+                                    },
+                                  ),
+
+                                  const Divider(),
+
+                                  ListTile(
+                                    leading: const Icon(
+                                      Icons.edit,
+                                    ),
+                                    title: const Text(
+                                      'Other / Not in NIFTY 500',
+                                      style: TextStyle(
+                                        fontWeight:
+                                            FontWeight.bold,
+                                      ),
+                                    ),
+                                    subtitle: const Text(
+                                      'Enter another stock manually',
+                                    ),
+                                    onTap: () {
+                                      Navigator.of(
+                                        dialogContext,
+                                      ).pop({
+                                        'type': 'other',
+                                      });
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () {
+                            Navigator.of(dialogContext).pop();
+                          },
+                          child: const Text('Cancel'),
+                        ),
+                      ],
+                    );
+                  },
+                );
+              },
+            );
+
+            if (!mounted || result == null) return;
+
+            if (result['type'] == 'other') {
+              setState(() {
+                nifty500Selected = false;
+                symbol.clear();
+              });
+              return;
+            }
+
+            if (result['type'] == 'nifty500') {
+              setState(() {
+                nifty500Selected = true;
+                symbol.text =
+                    '${result['symbol'] ?? ''}'
+                        .trim()
+                        .toUpperCase();
+              });
+            }
+          },
+          icon: const Icon(Icons.search),
+          label: Text(
+            symbol.text.isEmpty
+                ? 'Select NIFTY 500 Stock'
+                : '${symbol.text} • NIFTY 500',
           ),
-          onChanged: (value) => symbol.text = value.toUpperCase(),
-          onSubmitted: (_) => onFieldSubmitted(),
-        );
-      },
-      optionsViewBuilder: (context, onSelected, options) {
-        return Align(
-          alignment: Alignment.topLeft,
-          child: Material(
-            elevation: 6,
-            borderRadius: BorderRadius.circular(10),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(
-                maxHeight: 320,
-                maxWidth: 600,
-              ),
-              child: ListView.builder(
-                padding: EdgeInsets.zero,
-                shrinkWrap: true,
-                itemCount: options.length,
-                itemBuilder: (context, index) {
-                  final stock = options.elementAt(index);
-                  final stockSymbol =
-                      '${stock['symbol'] ?? ''}'.trim();
-                  final company =
-                      '${stock['company_name'] ?? ''}'.trim();
-                  return ListTile(
-                    dense: true,
-                    leading: const Icon(Icons.business, size: 20),
-                    title: Text(
-                      stockSymbol,
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    subtitle: Text(company),
-                    onTap: () => onSelected(stock),
-                  );
-                },
-              ),
+        ),
+
+        const SizedBox(height: 6),
+
+        TextButton.icon(
+          onPressed: () {
+            setState(() {
+              nifty500Selected = false;
+              symbol.clear();
+            });
+          },
+          icon: const Icon(Icons.edit),
+          label: const Text(
+            'Other / Not in NIFTY 500',
+          ),
+        ),
+
+        if (!nifty500Selected)
+          TextField(
+            controller: symbol,
+            decoration: const InputDecoration(
+              labelText: 'Symbol / Security',
+              hintText: 'Enter symbol manually',
             ),
+            onChanged: (_) {
+              nifty500Selected = false;
+            },
           ),
-        );
-      },
+      ],
     );
   }
 
@@ -674,9 +2314,18 @@ class _AddPurchaseScreenState extends State<AddPurchaseScreen> {
             decoration:
                 const InputDecoration(labelText: 'Asset Type'),
             items: const [
-              DropdownMenuItem(value: 'Stock', child: Text('Stock')),
-              DropdownMenuItem(value: 'MTF', child: Text('MTF')),
-              DropdownMenuItem(value: 'Crypto', child: Text('Crypto')),
+              DropdownMenuItem(
+                value: 'Stock',
+                child: Text('Stock'),
+              ),
+              DropdownMenuItem(
+                value: 'MTF',
+                child: Text('MTF'),
+              ),
+              DropdownMenuItem(
+                value: 'Crypto',
+                child: Text('Crypto'),
+              ),
             ],
             onChanged: (value) =>
                 setState(() => assetType = value!),
@@ -749,6 +2398,1230 @@ class _AddPurchaseScreenState extends State<AddPurchaseScreen> {
             child: const Text('Confirm Purchase'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class AccountScreen extends StatefulWidget {
+  const AccountScreen({super.key});
+
+  @override
+  State<AccountScreen> createState() => _AccountScreenState();
+}
+
+class _AccountScreenState extends State<AccountScreen> {
+  final broker = TextEditingController();
+  final name = TextEditingController();
+  final balance = TextEditingController(text: '0');
+
+  @override
+  void dispose() {
+    broker.dispose();
+    name.dispose();
+    balance.dispose();
+    super.dispose();
+  }
+
+  Future<void> save() async {
+    if (broker.text.trim().isEmpty) return;
+
+    final id = await lotManager.addAccount(
+      broker: broker.text.trim(),
+      accountName: name.text.trim().isEmpty
+          ? broker.text.trim()
+          : name.text.trim(),
+    );
+
+    final opening = double.tryParse(balance.text) ?? 0;
+    if (opening != 0) {
+      await lotManager.setOpeningBalance(
+        accountId: id,
+        balance: opening,
+      );
+    }
+
+    if (mounted) Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Add Account')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          TextField(
+            controller: broker,
+            decoration: const InputDecoration(
+              labelText: 'Broker / Platform',
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: name,
+            decoration: const InputDecoration(
+              labelText: 'Account Name (optional)',
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: balance,
+            keyboardType:
+                const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              labelText: 'Opening Wallet Balance',
+              prefixText: '₹ ',
+            ),
+          ),
+          const SizedBox(height: 16),
+          FilledButton(
+            onPressed: save,
+            child: const Text('Create Account'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class EditLotScreen extends StatefulWidget {
+  final Lot lot;
+
+  const EditLotScreen({
+    super.key,
+    required this.lot,
+  });
+
+  @override
+  State<EditLotScreen> createState() => _EditLotScreenState();
+}
+
+class _EditLotScreenState extends State<EditLotScreen> {
+  late final TextEditingController symbol;
+  late final TextEditingController quantity;
+  late final TextEditingController price;
+  late final TextEditingController charges;
+  late final TextEditingController myFunds;
+  late final TextEditingController brokerFunded;
+  late final TextEditingController mtfDaily;
+
+  late DateTime purchaseDate;
+
+  @override
+  void initState() {
+    super.initState();
+    final lot = widget.lot;
+
+    symbol = TextEditingController(text: lot.symbol);
+    quantity = TextEditingController(text: '${lot.quantity}');
+    price = TextEditingController(text: '${lot.buyPrice}');
+    charges = TextEditingController(
+      text: '${lot.purchaseCharges}',
+    );
+    myFunds = TextEditingController(text: '${lot.myFunds}');
+    brokerFunded = TextEditingController(
+      text: '${lot.brokerFunded}',
+    );
+    mtfDaily = TextEditingController(
+      text: '${lot.mtfDailyCharge}',
+    );
+    purchaseDate = lot.purchaseDate;
+  }
+
+  @override
+  void dispose() {
+    for (final controller in [
+      symbol,
+      quantity,
+      price,
+      charges,
+      myFunds,
+      brokerFunded,
+      mtfDaily,
+    ]) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> save() async {
+    try {
+      await lotManager.updateLot(
+        lotId: widget.lot.id,
+        accountId: widget.lot.accountId,
+        assetType: widget.lot.assetType,
+        fundingType: widget.lot.fundingType,
+        symbol: symbol.text.trim().toUpperCase(),
+        quantity: double.parse(quantity.text),
+        buyPrice: double.parse(price.text),
+        purchaseDate: purchaseDate,
+        purchaseCharges:
+            double.tryParse(charges.text) ?? 0,
+        purchaseOtherCharges:
+            widget.lot.purchaseOtherCharges,
+        myFunds: double.tryParse(myFunds.text) ?? 0,
+        brokerFunded:
+            double.tryParse(brokerFunded.text) ?? 0,
+        mtfDailyCharge:
+            double.tryParse(mtfDaily.text) ?? 0,
+        nifty500AtPurchase:
+            widget.lot.nifty500AtPurchase,
+      );
+
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$e')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Edit Open Position')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          TextField(
+            controller: symbol,
+            decoration:
+                const InputDecoration(labelText: 'Symbol'),
+          ),
+          TextField(
+            controller: quantity,
+            keyboardType:
+                const TextInputType.numberWithOptions(decimal: true),
+            decoration:
+                const InputDecoration(labelText: 'Quantity'),
+          ),
+          TextField(
+            controller: price,
+            keyboardType:
+                const TextInputType.numberWithOptions(decimal: true),
+            decoration:
+                const InputDecoration(labelText: 'Buy Price'),
+          ),
+          TextField(
+            controller: charges,
+            keyboardType:
+                const TextInputType.numberWithOptions(decimal: true),
+            decoration:
+                const InputDecoration(labelText: 'Purchase Charges'),
+          ),
+          if (widget.lot.assetType == 'MTF') ...[
+            TextField(
+              controller: myFunds,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration:
+                  const InputDecoration(labelText: 'My Funds'),
+            ),
+            TextField(
+              controller: brokerFunded,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration:
+                  const InputDecoration(labelText: 'Broker Funded'),
+            ),
+            TextField(
+              controller: mtfDaily,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'MTF Daily Charge / Day',
+              ),
+            ),
+          ],
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Purchase Date'),
+            subtitle: Text(
+              '${purchaseDate.day}/${purchaseDate.month}/${purchaseDate.year}',
+            ),
+            trailing: IconButton(
+              icon: const Icon(Icons.calendar_month),
+              onPressed: () async {
+                final selected = await showDatePicker(
+                  context: context,
+                  initialDate: purchaseDate,
+                  firstDate: DateTime(2000),
+                  lastDate: DateTime(2100),
+                );
+                if (selected != null) {
+                  setState(() => purchaseDate = selected);
+                }
+              },
+            ),
+          ),
+          const SizedBox(height: 12),
+          FilledButton(
+            onPressed: save,
+            child: const Text('Save Changes'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class CurrentPriceScreen extends StatefulWidget {
+  final Lot lot;
+
+  const CurrentPriceScreen({
+    super.key,
+    required this.lot,
+  });
+
+  @override
+  State<CurrentPriceScreen> createState() =>
+      _CurrentPriceScreenState();
+}
+
+class _CurrentPriceScreenState
+    extends State<CurrentPriceScreen> {
+  late final TextEditingController price;
+
+  @override
+  void initState() {
+    super.initState();
+    price = TextEditingController(
+      text: widget.lot.currentPrice?.toString() ?? '',
+    );
+  }
+
+  @override
+  void dispose() {
+    price.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(
+          'Current Price • ${widget.lot.symbol}',
+        ),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            TextField(
+              controller: price,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'Current Price',
+                prefixText: '₹ ',
+              ),
+            ),
+            const SizedBox(height: 12),
+            FilledButton(
+              onPressed: () async {
+                final value = double.tryParse(price.text) ?? 0;
+                if (value <= 0) return;
+
+                await lotManager.updateCurrentPrice(
+                  lotId: widget.lot.id,
+                  price: value,
+                );
+
+                if (mounted) Navigator.pop(context);
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class SquareOffScreen extends StatefulWidget {
+  final Lot lot;
+
+  const SquareOffScreen({
+    super.key,
+    required this.lot,
+  });
+
+  @override
+  State<SquareOffScreen> createState() =>
+      _SquareOffScreenState();
+}
+
+class _SquareOffScreenState
+    extends State<SquareOffScreen> {
+  final sellPrice = TextEditingController();
+  final sellCharges = TextEditingController(text: '0');
+  final otherCharges = TextEditingController(text: '0');
+
+  DateTime sellDate = DateTime.now();
+  Map<String, double>? preview;
+
+  @override
+  void dispose() {
+    sellPrice.dispose();
+    sellCharges.dispose();
+    otherCharges.dispose();
+    super.dispose();
+  }
+
+  Future<void> calculate() async {
+    final price = double.tryParse(sellPrice.text) ?? 0;
+    if (price <= 0) return;
+
+    final result = await lotManager.previewSquareOff(
+      lot: widget.lot,
+      sellPrice: price,
+      sellDate: sellDate,
+      sellCharges:
+          double.tryParse(sellCharges.text) ?? 0,
+      sellOtherCharges:
+          double.tryParse(otherCharges.text) ?? 0,
+    );
+
+    if (mounted) setState(() => preview = result);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final result = preview;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(
+          'Square Off • ${widget.lot.symbol}',
+        ),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Text(
+            'Full lot: ${widget.lot.remainingQuantity} shares/units',
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          TextField(
+            controller: sellPrice,
+            onChanged: (_) => calculate(),
+            keyboardType:
+                const TextInputType.numberWithOptions(decimal: true),
+            decoration:
+                const InputDecoration(labelText: 'Sell Price'),
+          ),
+          TextField(
+            controller: sellCharges,
+            onChanged: (_) => calculate(),
+            keyboardType:
+                const TextInputType.numberWithOptions(decimal: true),
+            decoration:
+                const InputDecoration(labelText: 'Selling Charges'),
+          ),
+          TextField(
+            controller: otherCharges,
+            onChanged: (_) => calculate(),
+            keyboardType:
+                const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              labelText: 'Other Selling Charges',
+            ),
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Sell Date'),
+            subtitle: Text(
+              '${sellDate.day}/${sellDate.month}/${sellDate.year}',
+            ),
+            trailing: IconButton(
+              icon: const Icon(Icons.calendar_month),
+              onPressed: () async {
+                final selected = await showDatePicker(
+                  context: context,
+                  initialDate: sellDate,
+                  firstDate: widget.lot.purchaseDate,
+                  lastDate: DateTime(2100),
+                );
+                if (selected != null) {
+                  setState(() => sellDate = selected);
+                  await calculate();
+                }
+              },
+            ),
+          ),
+          if (result != null) ...[
+            const SizedBox(height: 12),
+            Card(
+              child: Column(
+                children: [
+                  _row('Gross Profit', result['grossProfit']!),
+                  _row(
+                    'Purchase Charges',
+                    result['purchaseCharges']!,
+                  ),
+                  _row(
+                    'MTF Interest',
+                    result['mtfInterest']!,
+                  ),
+                  _row(
+                    'Selling Charges',
+                    result['sellCharges']!,
+                  ),
+                  _row(
+                    'Total Charges',
+                    result['totalCharges']!,
+                  ),
+                  const Divider(),
+                  _row(
+                    'Net Profit/Loss',
+                    result['netProfitLoss']!,
+                    bold: true,
+                  ),
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          FilledButton(
+            onPressed: () async {
+              await calculate();
+              if (preview == null) return;
+
+              await lotManager.squareOffLot(
+                lot: widget.lot,
+                sellPrice: double.parse(sellPrice.text),
+                sellDate: sellDate,
+                sellCharges:
+                    double.tryParse(sellCharges.text) ?? 0,
+                sellOtherCharges:
+                    double.tryParse(otherCharges.text) ?? 0,
+              );
+
+              if (mounted) Navigator.pop(context);
+            },
+            child: const Text('Confirm Square Off'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _row(
+    String label,
+    double value, {
+    bool bold = false,
+  }) {
+    return ListTile(
+      dense: true,
+      title: Text(label),
+      trailing: Text(
+        '₹${value.toStringAsFixed(2)}',
+        style: TextStyle(
+          fontWeight: bold ? FontWeight.bold : null,
+        ),
+      ),
+    );
+  }
+}
+
+class DividendScreen extends StatefulWidget {
+  final Lot lot;
+
+  const DividendScreen({
+    super.key,
+    required this.lot,
+  });
+
+  @override
+  State<DividendScreen> createState() => _DividendScreenState();
+}
+
+class _DividendScreenState
+    extends State<DividendScreen> {
+  final eligibleShares = TextEditingController();
+  final dividendPerShare = TextEditingController();
+  final notes = TextEditingController();
+  bool received = false;
+
+  @override
+  void dispose() {
+    eligibleShares.dispose();
+    dividendPerShare.dispose();
+    notes.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(
+          'Dividend • ${widget.lot.symbol}',
+        ),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          TextField(
+            controller: eligibleShares,
+            keyboardType:
+                const TextInputType.numberWithOptions(decimal: true),
+            decoration:
+                const InputDecoration(labelText: 'Eligible Shares'),
+          ),
+          TextField(
+            controller: dividendPerShare,
+            keyboardType:
+                const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              labelText: 'Dividend / Share',
+            ),
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Dividend received'),
+            value: received,
+            onChanged: (value) =>
+                setState(() => received = value),
+          ),
+          TextField(
+            controller: notes,
+            decoration:
+                const InputDecoration(labelText: 'Notes'),
+          ),
+          const SizedBox(height: 12),
+          FilledButton(
+            onPressed: () async {
+              final shares =
+                  double.tryParse(eligibleShares.text) ?? 0;
+              final rate =
+                  double.tryParse(dividendPerShare.text) ?? 0;
+
+              if (shares <= 0 ||
+                  rate <= 0 ||
+                  shares > widget.lot.quantity) {
+                return;
+              }
+
+              await lotManager.addDividend(
+                lotId: widget.lot.id,
+                dividendDate: DateTime.now(),
+                receivedDate:
+                    received ? DateTime.now() : null,
+                eligibleQuantity: shares,
+                dividendPerShare: rate,
+                notes: notes.text.trim(),
+              );
+
+              if (mounted) Navigator.pop(context);
+            },
+            child: const Text('Save Dividend'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class OptionsScreen extends StatefulWidget {
+  const OptionsScreen({super.key});
+
+  @override
+  State<OptionsScreen> createState() =>
+      _OptionsScreenState();
+}
+
+class _OptionsScreenState
+    extends State<OptionsScreen> {
+  List<Map<String, dynamic>> accounts = [];
+  int? accountId;
+  String optionType = 'CE';
+
+  final underlying = TextEditingController();
+  final strike = TextEditingController();
+  final quantity = TextEditingController();
+  final buyPrice = TextEditingController();
+  final sellPrice = TextEditingController();
+  final buyCharges = TextEditingController(text: '0');
+  final sellCharges = TextEditingController(text: '0');
+  final otherCharges = TextEditingController(text: '0');
+
+  @override
+  void initState() {
+    super.initState();
+    loadAccounts();
+  }
+
+  Future<void> loadAccounts() async {
+    accounts = await lotManager.getAccounts();
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    for (final controller in [
+      underlying,
+      strike,
+      quantity,
+      buyPrice,
+      sellPrice,
+      buyCharges,
+      sellCharges,
+      otherCharges,
+    ]) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Options — Buy + Sell'),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          DropdownButtonFormField<int>(
+            initialValue: accountId,
+            decoration:
+                const InputDecoration(labelText: 'Account'),
+            items: accounts.map((account) {
+              final id = (account['id'] as num).toInt();
+              return DropdownMenuItem(
+                value: id,
+                child: Text(
+                  '${account['broker']} • ${account['account_name']}',
+                ),
+              );
+            }).toList(),
+            onChanged: (value) =>
+                setState(() => accountId = value),
+          ),
+          TextField(
+            controller: underlying,
+            decoration:
+                const InputDecoration(labelText: 'Underlying'),
+          ),
+          DropdownButtonFormField<String>(
+            initialValue: optionType,
+            decoration:
+                const InputDecoration(labelText: 'Option Type'),
+            items: const [
+              DropdownMenuItem(
+                value: 'CE',
+                child: Text('CE'),
+              ),
+              DropdownMenuItem(
+                value: 'PE',
+                child: Text('PE'),
+              ),
+            ],
+            onChanged: (value) =>
+                setState(() => optionType = value!),
+          ),
+          _numberField(strike, 'Strike Price'),
+          _numberField(quantity, 'Quantity'),
+          _numberField(buyPrice, 'Buy Price'),
+          _numberField(sellPrice, 'Sell Price'),
+          _numberField(buyCharges, 'Buy Charges'),
+          _numberField(sellCharges, 'Sell Charges'),
+          _numberField(otherCharges, 'Other Charges'),
+          const SizedBox(height: 12),
+          FilledButton(
+            onPressed: () async {
+              if (accountId == null) return;
+
+              await lotManager.addOptionsTrade(
+                accountId: accountId!,
+                underlying: underlying.text.trim(),
+                optionType: optionType,
+                strikePrice:
+                    double.tryParse(strike.text) ?? 0,
+                expiryDate: DateTime.now(),
+                tradeDate: DateTime.now(),
+                quantity:
+                    double.tryParse(quantity.text) ?? 0,
+                buyPrice:
+                    double.tryParse(buyPrice.text) ?? 0,
+                sellPrice:
+                    double.tryParse(sellPrice.text) ?? 0,
+                buyCharges:
+                    double.tryParse(buyCharges.text) ?? 0,
+                sellCharges:
+                    double.tryParse(sellCharges.text) ?? 0,
+                otherCharges:
+                    double.tryParse(otherCharges.text) ?? 0,
+              );
+
+              if (mounted) Navigator.pop(context);
+            },
+            child: const Text('Confirm Option Trade'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _numberField(
+    TextEditingController controller,
+    String label,
+  ) {
+    return TextField(
+      controller: controller,
+      keyboardType:
+          const TextInputType.numberWithOptions(decimal: true),
+      decoration: InputDecoration(labelText: label),
+    );
+  }
+}
+
+class WalletScreen extends StatefulWidget {
+  final List<Map<String, dynamic>> accounts;
+
+  const WalletScreen({
+    super.key,
+    required this.accounts,
+  });
+
+  @override
+  State<WalletScreen> createState() => _WalletScreenState();
+}
+
+class _WalletScreenState extends State<WalletScreen> {
+  Map<int, double> balances = {};
+
+  @override
+  void initState() {
+    super.initState();
+    load();
+  }
+
+  Future<void> load() async {
+    balances = await lotManager.getAllWalletBalances();
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final total =
+        balances.values.fold<double>(0, (a, b) => a + b);
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Wallet')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Card(
+            child: ListTile(
+              title: const Text('Total Wallet Balance'),
+              trailing: Text(
+                '₹${total.toStringAsFixed(2)}',
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+          ...widget.accounts.map((account) {
+            final id = (account['id'] as num).toInt();
+            return Card(
+              child: ListTile(
+                title: Text(
+                  '${account['broker']} • ${account['account_name']}',
+                ),
+                trailing: Text(
+                  '₹${(balances[id] ?? 0).toStringAsFixed(2)}',
+                ),
+                onTap: () => actions(id),
+              ),
+            );
+          }),
+          OutlinedButton.icon(
+            onPressed: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const AccountScreen(),
+                ),
+              );
+              await load();
+            },
+            icon: const Icon(Icons.add),
+            label: const Text('Add Account'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> actions(int accountId) async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              title: const Text('Add Funds'),
+              onTap: () =>
+                  Navigator.pop(context, 'add'),
+            ),
+            ListTile(
+              title: const Text('Withdraw'),
+              onTap: () =>
+                  Navigator.pop(context, 'withdraw'),
+            ),
+            ListTile(
+              title: const Text('Transfer'),
+              onTap: () =>
+                  Navigator.pop(context, 'transfer'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (action == null) return;
+
+    if (action == 'transfer') {
+      await transfer(accountId);
+      return;
+    }
+
+    final controller = TextEditingController();
+    final value = await showDialog<double>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(
+          action == 'add'
+              ? 'Add Funds'
+              : 'Withdraw Funds',
+        ),
+        content: TextField(
+          controller: controller,
+          keyboardType:
+              const TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(
+            labelText: 'Amount',
+            prefixText: '₹ ',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.pop(
+                  context,
+                  double.tryParse(controller.text),
+                ),
+            child: const Text('Confirm'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+
+    if (value == null || value <= 0) return;
+
+    await lotManager.addWalletTransaction(
+      accountId: accountId,
+      type: action == 'add'
+          ? 'deposit'
+          : 'withdrawal',
+      amount: action == 'add' ? value : -value,
+    );
+
+    await load();
+  }
+
+  Future<void> transfer(int fromAccountId) async {
+    final otherAccounts = widget.accounts
+        .where(
+          (account) =>
+              (account['id'] as num).toInt() != fromAccountId,
+        )
+        .toList();
+
+    if (otherAccounts.isEmpty) return;
+
+    int toAccountId =
+        (otherAccounts.first['id'] as num).toInt();
+    final controller = TextEditingController();
+
+    final amount = await showDialog<double>(
+      context: context,
+      builder: (_) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            title: const Text('Transfer Funds'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                DropdownButtonFormField<int>(
+                  initialValue: toAccountId,
+                  decoration: const InputDecoration(
+                    labelText: 'To Account',
+                  ),
+                  items: otherAccounts.map((account) {
+                    return DropdownMenuItem(
+                      value:
+                          (account['id'] as num).toInt(),
+                      child: Text(
+                        account['account_name'] as String,
+                      ),
+                    );
+                  }).toList(),
+                  onChanged: (value) {
+                    setDialogState(
+                      () => toAccountId = value!,
+                    );
+                  },
+                ),
+                TextField(
+                  controller: controller,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: 'Amount',
+                    prefixText: '₹ ',
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () =>
+                    Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () =>
+                    Navigator.pop(
+                      context,
+                      double.tryParse(controller.text),
+                    ),
+                child: const Text('Transfer'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    controller.dispose();
+
+    if (amount == null || amount <= 0) return;
+
+    await lotManager.transferFunds(
+      fromAccountId: fromAccountId,
+      toAccountId: toAccountId,
+      amount: amount,
+    );
+
+    await load();
+  }
+}
+
+class ClosedScreen extends StatelessWidget {
+  const ClosedScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Closed Trades'),
+      ),
+      body: FutureBuilder<Map<String, List<Map<String, dynamic>>>>(
+        future: _load(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(
+              child: CircularProgressIndicator(),
+            );
+          }
+
+          if (snapshot.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  'Unable to load closed trades.\n\n${snapshot.error}',
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            );
+          }
+
+          final closed = snapshot.data?['closed'] ?? [];
+          final options = snapshot.data?['options'] ?? [];
+
+          return ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              _sectionTitle(
+                'Closed Positions',
+                Icons.check_circle_outline,
+                const Color(0xFF2563EB),
+              ),
+              if (closed.isEmpty)
+                _emptyCard('No closed positions yet.')
+              else
+                ...closed.map(_closedRow),
+
+              const SizedBox(height: 20),
+
+              _sectionTitle(
+                'Options',
+                Icons.show_chart,
+                const Color(0xFF9333EA),
+              ),
+              if (options.isEmpty)
+                _emptyCard('No closed option trades yet.')
+              else
+                ...options.map(_optionRow),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Future<Map<String, List<Map<String, dynamic>>>> _load() async {
+    try {
+      final closed = await lotManager
+          .getClosedPositions()
+          .timeout(const Duration(seconds: 5));
+
+      final options = await lotManager
+          .getOptionsTrades()
+          .timeout(const Duration(seconds: 5));
+
+      return {
+        'closed': closed,
+        'options': options,
+      };
+    } catch (e) {
+      return {
+        'closed': [],
+        'options': [],
+      };
+    }
+  }
+
+  Widget _sectionTitle(
+    String title,
+    IconData icon,
+    Color color,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 18,
+            backgroundColor: color.withOpacity(0.10),
+            child: Icon(
+              icon,
+              color: color,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 19,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _emptyCard(String text) {
+    return Card(
+      elevation: 0,
+      color: const Color(0xFFF8FAFC),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Text(
+          text,
+          style: const TextStyle(
+            color: Color(0xFF667085),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _closedRow(Map<String, dynamic> row) {
+    final pnl = (row['net_profit_loss'] as num?)?.toDouble() ?? 0;
+
+    return Card(
+      elevation: 1,
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        title: Text(
+          '${row['symbol']} • ${row['asset_type']}',
+          style: const TextStyle(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        subtitle: const Text('Closed position'),
+        trailing: Text(
+          '${pnl >= 0 ? '+' : ''}₹${pnl.toStringAsFixed(2)}',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: pnl >= 0
+                ? Colors.green[700]
+                : Colors.red[700],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _optionRow(Map<String, dynamic> row) {
+    final pnl =
+        (row['net_profit_loss'] as num?)?.toDouble() ?? 0;
+
+    return Card(
+      elevation: 1,
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        title: Text(
+          '${row['underlying']} '
+          '${row['strike_price']} '
+          '${row['option_type']}',
+          style: const TextStyle(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        subtitle: Text(
+          'Buy ₹${row['buy_price']} → Sell ₹${row['sell_price']}',
+        ),
+        trailing: Text(
+          '${pnl >= 0 ? '+' : ''}₹${pnl.toStringAsFixed(2)}',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: pnl >= 0
+                ? Colors.green[700]
+                : Colors.red[700],
+          ),
+        ),
       ),
     );
   }

@@ -1,0 +1,137 @@
+name: Fix account creation flow
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Patch account creation flow
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('lib/main.dart')
+          s = p.read_text()
+
+          old = '''          TextButton.icon(
+            onPressed: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const AccountScreen(),
+                ),
+              );
+              await loadAccounts();
+            },
+            icon: const Icon(Icons.add),
+            label: const Text('Add another account'),
+          ),'''
+
+          new = '''          TextButton.icon(
+            onPressed: () async {
+              final newAccountId = await Navigator.push<int>(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const AccountScreen(),
+                ),
+              );
+              await loadAccounts();
+              if (newAccountId != null && mounted) {
+                setState(() => accountId = newAccountId);
+              }
+            },
+            icon: const Icon(Icons.add),
+            label: const Text('Add another account'),
+          ),'''
+
+          if old not in s:
+              raise SystemExit('Add-account UI block not found')
+          s = s.replace(old, new, 1)
+
+          old = '''  Future<void> save() async {
+    if (broker.text.trim().isEmpty) return;
+
+    final id = await lotManager.addAccount(
+      broker: broker.text.trim(),
+      accountName: name.text.trim().isEmpty
+          ? broker.text.trim()
+          : name.text.trim(),
+    );
+
+    final opening = double.tryParse(balance.text) ?? 0;
+    if (opening != 0) {
+      await lotManager.setOpeningBalance(
+        accountId: id,
+        balance: opening,
+      );
+    }
+
+    if (mounted) Navigator.pop(context);
+  }'''
+
+          new = '''  Future<void> save() async {
+    final brokerName = broker.text.trim();
+    if (brokerName.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter Broker / Platform')),
+      );
+      return;
+    }
+
+    final opening = double.tryParse(balance.text.trim());
+    if (opening == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter a valid opening balance')),
+      );
+      return;
+    }
+
+    try {
+      final id = await lotManager.addAccount(
+        broker: brokerName,
+        accountName: name.text.trim().isEmpty
+            ? brokerName
+            : name.text.trim(),
+      );
+
+      if (opening != 0) {
+        await lotManager.setOpeningBalance(
+          accountId: id,
+          balance: opening,
+        );
+      }
+
+      if (mounted) Navigator.pop(context, id);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not create account: $e')),
+        );
+      }
+    }
+  }'''
+
+          if old not in s:
+              raise SystemExit('Account save block not found')
+          s = s.replace(old, new, 1)
+
+          p.write_text(s)
+          PY
+
+      - name: Commit and remove workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib/main.dart
+          git rm .github/workflows/fix-account-save.yml
+          git commit -m "Fix account creation and selection"
+          git push origin main

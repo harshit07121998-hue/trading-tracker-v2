@@ -41,18 +41,84 @@ class Lot {
     required this.nifty500AtPurchase,
   });
 
-  double get investedValue {
-    if (assetType.toUpperCase() == 'MTF') return myFunds;
-    return remainingQuantity * buyPrice;
-  }
+  bool get isMtf => assetType.toUpperCase() == 'MTF';
+
+  double get currentOrBuyPrice => currentPrice ?? buyPrice;
 
   double get marketValue =>
-      remainingQuantity * (currentPrice ?? buyPrice);
+      remainingQuantity * currentOrBuyPrice;
 
-  double get unrealisedPnL {
-    if (currentPrice == null) return 0;
-    return marketValue - investedValue;
+  double get remainingRatio {
+    if (quantity <= 0) return 0;
+    return (remainingQuantity / quantity).clamp(0.0, 1.0);
   }
+
+  // Only the portion belonging to the currently open quantity.
+  double get allocatedMyFunds =>
+      isMtf ? myFunds * remainingRatio : 0;
+
+  double get allocatedPurchaseCharges =>
+      (purchaseCharges + purchaseOtherCharges) * remainingRatio;
+
+  // Invested capital for the currently open quantity.
+  // MTF uses only the user's own funds; broker funding is excluded.
+  double get investedValue {
+    if (isMtf) {
+      return allocatedMyFunds + allocatedPurchaseCharges;
+    }
+    return marketCost;
+  }
+
+  double get marketCost =>
+      remainingQuantity * buyPrice + allocatedPurchaseCharges;
+
+  // Gross mark-to-market P&L before MTF financing cost.
+  double get grossUnrealisedPnL =>
+      (currentOrBuyPrice - buyPrice) * remainingQuantity -
+      (isMtf ? 0 : allocatedPurchaseCharges);
+
+  // Accrued MTF interest is calculated from the purchase date to the
+  // current calendar date. It is a calculation only and never changes Wallet.
+  double mtfInterest({DateTime? tillDate}) {
+    if (!isMtf || mtfDailyCharge <= 0 || remainingQuantity <= 0) {
+      return 0;
+    }
+
+    final end = tillDate ?? DateTime.now();
+    final startDate = DateTime(
+      purchaseDate.year,
+      purchaseDate.month,
+      purchaseDate.day,
+    );
+    final endDate = DateTime(
+      end.year,
+      end.month,
+      end.day,
+    );
+
+    final days = endDate.difference(startDate).inDays;
+    return (days <= 0 ? 0 : days) * mtfDailyCharge;
+  }
+
+  double get netUnrealisedPnL {
+    final gross = grossUnrealisedPnL;
+    return isMtf ? gross - mtfInterest() : gross;
+  }
+
+  double get grossUnrealisedPnLPercent {
+    final invested = investedValue;
+    if (invested == 0) return 0;
+    return grossUnrealisedPnL / invested * 100;
+  }
+
+  double get netUnrealisedPnLPercent {
+    final invested = investedValue;
+    if (invested == 0) return 0;
+    return netUnrealisedPnL / invested * 100;
+  }
+
+  // Backwards-compatible getter used by existing screens.
+  double get unrealisedPnL => netUnrealisedPnL;
 
   factory Lot.fromMap(Map<String, dynamic> map) {
     return Lot(

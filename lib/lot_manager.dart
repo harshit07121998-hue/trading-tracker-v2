@@ -170,22 +170,8 @@ class LotManager {
   double calculateMtfInterest(
     Lot lot, {
     DateTime? tillDate,
-  }) {
-    if (lot.mtfDailyCharge <= 0) return 0;
-    final end = tillDate ?? DateTime.now();
-    final start = DateTime(
-      lot.purchaseDate.year,
-      lot.purchaseDate.month,
-      lot.purchaseDate.day,
-    );
-    final finish = DateTime(
-      end.year,
-      end.month,
-      end.day,
-    );
-    final days = finish.difference(start).inDays;
-    return days <= 0 ? 0 : days * lot.mtfDailyCharge;
-  }
+  }) =>
+      lot.mtfInterest(tillDate: tillDate);
 
   Future<Map<String, double>> previewSquareOff({
     required Lot lot,
@@ -200,18 +186,18 @@ class LotManager {
       lot,
       tillDate: sellDate,
     );
+
+    final purchaseCharges = lot.allocatedPurchaseCharges;
     final totalCharges =
-        lot.purchaseCharges +
-        lot.purchaseOtherCharges +
+        (lot.isMtf ? purchaseCharges : purchaseCharges) +
         interest +
         sellCharges +
         sellOtherCharges;
 
     return {
       'grossProfit': gross,
-      'purchaseCharges':
-          lot.purchaseCharges + lot.purchaseOtherCharges,
-      'mtfInterest': interest,
+      'purchaseCharges': purchaseCharges,
+      'mtfInterest': lot.isMtf ? interest : 0,
       'sellCharges': sellCharges,
       'sellOtherCharges': sellOtherCharges,
       'totalCharges': totalCharges,
@@ -244,24 +230,25 @@ class LotManager {
       sellPrice: sellPrice,
       purchaseDate: lot.purchaseDate,
       sellDate: sellDate,
-      purchaseCharges: lot.purchaseCharges,
-      purchaseOtherCharges: lot.purchaseOtherCharges,
+      purchaseCharges: preview['purchaseCharges']!,
+      purchaseOtherCharges: 0,
       mtfInterest: preview['mtfInterest']!,
       sellCharges: sellCharges,
       sellOtherCharges: sellOtherCharges,
       grossProfit: preview['grossProfit']!,
       totalCharges: preview['totalCharges']!,
       netProfitLoss: preview['netProfitLoss']!,
-      myFunds: lot.myFunds,
-      brokerFunded: lot.brokerFunded,
+      myFunds: lot.allocatedMyFunds,
+      brokerFunded: lot.brokerFunded * lot.remainingRatio,
     );
 
-    // Add sale proceeds and deduct sell charges + MTF interest only at sale.
+    // Wallet is intentionally separate from MTF interest.
+    // MTF financing cost is recorded in the square-off calculation only;
+    // it is never debited from Wallet.
     final walletCredit =
         lot.remainingQuantity * sellPrice -
         sellCharges -
-        sellOtherCharges -
-        preview['mtfInterest']!;
+        sellOtherCharges;
 
     await _db.addWalletTransaction(
       accountId: lot.accountId,
@@ -283,8 +270,7 @@ class LotManager {
   }) async {
     final lot = await getLotById(lotId);
     if (lot == null) throw Exception('Position not found.');
-    if (eligibleQuantity <= 0 ||
-        eligibleQuantity > lot.quantity) {
+    if (eligibleQuantity <= 0 || eligibleQuantity > lot.quantity) {
       throw Exception('Invalid dividend quantity.');
     }
 
@@ -329,16 +315,12 @@ class LotManager {
     double sellCharges = 0,
     double otherCharges = 0,
   }) async {
-    final gross =
-        (sellPrice - buyPrice) * quantity;
-    final charges =
-        buyCharges + sellCharges + otherCharges;
+    final gross = (sellPrice - buyPrice) * quantity;
+    final charges = buyCharges + sellCharges + otherCharges;
     final net = gross - charges;
 
-    final buyCash =
-        buyPrice * quantity + buyCharges;
-    final sellCash =
-        sellPrice * quantity - sellCharges - otherCharges;
+    final buyCash = buyPrice * quantity + buyCharges;
+    final sellCash = sellPrice * quantity - sellCharges - otherCharges;
 
     final wallet = await _db.getWalletBalance(accountId);
     if (wallet < buyCash) {
@@ -364,7 +346,6 @@ class LotManager {
       myFunds: buyCash,
     );
 
-    // Net cash impact because options are entered as one completed trade.
     await _db.addWalletTransaction(
       accountId: accountId,
       type: 'option',
@@ -431,8 +412,9 @@ class LotManager {
         category: category,
         xirr: value,
       );
-Future<List<Map<String, dynamic>>> searchNifty500(
-  String search,
-) =>
-    _db.searchNifty500(search);
+
+  Future<List<Map<String, dynamic>>> searchNifty500(
+    String search,
+  ) =>
+      _db.searchNifty500(search);
 }
